@@ -1,0 +1,1075 @@
+/* ==========================================================================
+   Maria — app.js : controller UI (router, viste, eventi)
+   ========================================================================== */
+(function (global) {
+  'use strict';
+  const U = global.U, Store = global.Store, Advice = global.Advice,
+        Alerts = global.Alerts, Live = global.Live, Charts = global.Charts;
+
+  const ICONS = {
+    home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>',
+    diary: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>',
+    water: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>',
+    gauge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M13.4 12.6 18 8"/><path d="M4 18a9 9 0 1 1 16 0"/></svg>',
+    tools: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a4 4 0 0 1 0 5.6l-7.4 7.4-5.6-5.6 7.4-7.4a4 4 0 0 1 5.6 0z"/><path d="M16 8l6-6"/></svg>',
+    leaf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M11 20A7 7 0 0 1 4 13c0-6 5-10 16-10 0 9-5 14-9 17z"/><path d="M4 21c3-8 8-11 14-13"/></svg>',
+    settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M12 2.5 13 4h2l1-1.5 2 1.2-.7 1.8 1.4 1.4 1.8-.7 1.2 2-1.5 1v2l1.5 1-1.2 2-1.8-.7-1.4 1.4.7 1.8-2 1.2-1-1.5h-2l-1 1.5-2-1.2.7-1.8L7 17.3l-1.8.7-1.2-2 1.5-1v-2l-1.5-1 1.2-2 1.8.7L8.5 9 7.8 7.2l2-1.2L10.8 7.6h2z"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>',
+    back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 5l-7 7 7 7"/></svg>',
+    bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 9a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>'
+  };
+
+  const TABS = [
+    { id: 'home',   label: 'Home',      icon: ICONS.home },
+    { id: 'diary',  label: 'Diario',    icon: ICONS.diary },
+    { id: 'live',   label: 'Live',      icon: ICONS.gauge },
+    { id: 'tools',  label: 'Strumenti', icon: ICONS.tools },
+    { id: 'setup',  label: 'Setup',     icon: ICONS.settings }
+  ];
+
+  const App = {
+    screen: 'home',
+    ICONS,
+
+    init() {
+      Store.init();
+      if (!Store.state.grows.length) {
+        // primo avvio: nessuna grow -> mostra onboarding
+      }
+      Live.init();
+      Live.onSample(() => { if (this.screen === 'live' || this.screen === 'home') this.refreshLiveDom(); });
+      Live.onStatus(() => { this.render(); });
+
+      this.bindEvents();
+      this.render();
+
+      // registra il service worker
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+      }
+    },
+
+    grow() { return Store.activeGrow(); },
+    target() { const g = this.grow(); return Advice.targetFor(g ? g.stage : 'vegetativa'); },
+
+    go(screen) { this.screen = screen; this.render(); window.scrollTo(0, 0); },
+
+    render() {
+      const g = this.grow();
+      const el = U.$('#app');
+      el.innerHTML = this.headerHTML(g) + `<main id="screen">${this.screenHTML()}</main>` + this.tabbarHTML() + `<div class="toast-wrap"></div>`;
+      if (this.screen === 'live') this.refreshLiveDom();
+      if (this.screen === 'tools') this.runCalc();
+    },
+
+    screenHTML() {
+      switch (this.screen) {
+        case 'home':  return this.viewHome();
+        case 'diary': return this.viewDiary();
+        case 'live':  return this.viewLive();
+        case 'tools': return this.viewTools();
+        case 'setup': return this.viewSetup();
+        default:      return this.viewHome();
+      }
+    },
+
+    headerHTML(g) {
+      const titles = {
+        home: ['Ciao', g ? g.name : 'Benvenuto'],
+        diary: ['Diario', 'Appunti giornalieri'],
+        live: ['Live', 'Parametri e controllo remoto'],
+        tools: ['Strumenti', 'Consigli e calcolatori'],
+        setup: ['Setup', 'Coltivazioni e preferenze']
+      };
+      const t = titles[this.screen] || titles.home;
+      const nAlerts = g ? Alerts.count(g) : 0;
+      const bell = `<button class="icon-btn" data-action="go" data-screen="home" style="position:relative">${ICONS.bell}${nAlerts ? `<span style="position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:10px;font-weight:800;border-radius:999px;min-width:17px;height:17px;display:grid;place-items:center;padding:0 4px">${nAlerts}</span>` : ''}</button>`;
+      return `<header class="app-header">
+        <div class="brand-dot">M</div>
+        <div class="title">${U.esc(t[0])}<small>${U.esc(t[1] || '')}</small></div>
+        ${bell}
+      </header>`;
+    },
+
+    tabbarHTML() {
+      return `<nav class="tabbar">${TABS.map(tb => `
+        <button class="${this.screen === tb.id ? 'active' : ''}" data-action="go" data-screen="${tb.id}">
+          ${tb.icon}<span>${tb.label}</span>
+        </button>`).join('')}</nav>`;
+    },
+
+    /* ---------- header dinamico dello schermo vuoto ---------- */
+    emptyGrow() {
+      return `<div class="screen"><div class="empty">
+        <div class="big">🌱</div>
+        <p>Nessuna coltivazione presente.<br>Crea la tua prima coltivazione per iniziare a tener traccia di giornate, interventi e parametri.</p>
+        <div class="row-btns" style="justify-content:center;margin-top:14px">
+          <button class="btn primary" data-action="new-grow">+ Nuova coltivazione</button>
+          <button class="btn" data-action="demo">Carica demo</button>
+        </div>
+      </div></div>`;
+    },
+
+    /* ================= HOME ================= */
+    viewHome() {
+      const g = this.grow();
+      if (!g) return this.emptyGrow();
+      const t = Advice.targetFor(g.stage);
+      const stage = Store.STAGES.find(s => s.id === g.stage) || Store.STAGES[2];
+      const stages = Store.STAGES;
+      const idx = stages.findIndex(s => s.id === g.stage);
+      const day = U.dayNumber(g.startDate);
+      const tip = Advice.dailyTip(g);
+      const alerts = Alerts.compute(g);
+      const last = Live.value || Store.latestReading(g.id);
+
+      const rail = stages.map((s, i) =>
+        `<div class="st ${i < idx ? 'done' : i === idx ? 'now' : ''}"></div>`).join('');
+
+      return `<div class="screen">
+        <div class="hero">
+          <div class="h-top">
+            <div>
+              <div class="h-stage" style="color:var(--lime)">${U.esc(stage.label)}</div>
+              <div class="h-name">${U.esc(g.strain || g.name)}</div>
+              <div class="h-sub">${U.esc(g.genetics || g.medium || '')}</div>
+            </div>
+            <div class="h-day"><div class="n">${day}</div><div class="l">giorno</div></div>
+          </div>
+          <div class="stage-rail">${rail}</div>
+          <div class="progress"><i style="width:${Math.min(100, (idx + 0.5) / stages.length * 100).toFixed(0)}%"></i></div>
+          <div class="flex between mt12">
+            <span class="muted" style="font-size:12px">Inizio ${U.fmtDate(g.startDate, 'short')}</span>
+            <span class="muted" style="font-size:12px">Settimana ${Advice.weekOf(g)}</span>
+          </div>
+        </div>
+
+        <div class="section-title">Alert <span class="mute2">${alerts.filter(a => a.level !== 'ok').length}</span></div>
+        ${alerts.slice(0, 4).map(a => this.alertHTML(a)).join('')}
+
+        <div class="section-title">Parametri <span class="badge-live ${Live.mode === 'off' ? 'off' : ''}"><span class="dot"></span>${Live.mode === 'off' ? 'offline' : Live.mode}</span></div>
+        <div class="grid grid-2 wide" id="home-kpis">
+          ${this.kpiHTML('Temperatura', last && last.temp, '°C', t.tempD, 1)}
+          ${this.kpiHTML('Umidità', last && last.rh, '%', t.rh, 0)}
+          ${this.kpiHTML('VPD', last && last.vpd, 'kPa', t.vpd, 2)}
+          ${this.kpiHTML('pH', last && last.ph, '', t.phSoil, 1)}
+        </div>
+        <div class="row-btns mt12">
+          <button class="btn primary sm" data-action="go" data-screen="live">📡 Vai al Live</button>
+          <button class="btn sm" data-action="quick-reading">＋ Lettura manuale</button>
+        </div>
+
+        <div class="section-title">Consiglio del giorno</div>
+        <div class="card">
+          <div class="flex gap12 aic"><div style="font-size:30px">${tip.icon}</div><div><div style="font-weight:800">${U.esc(tip.title)}</div><div class="muted" style="font-size:13.5px;margin-top:4px">${U.esc(tip.text)}</div></div></div>
+        </div>
+
+        <div class="section-title">Azioni rapide</div>
+        <div class="grid grid-2">
+          <button class="btn" data-action="quick" data-kind="entry">📝 Nota giornaliera</button>
+          <button class="btn" data-action="quick" data-kind="irrigazione">💧 Irrigazione</button>
+          <button class="btn" data-action="quick" data-kind="nutrizione">🧪 Nutrizione</button>
+          <button class="btn" data-action="quick" data-kind="obs">👁️ Osservazione pianta</button>
+        </div>
+
+        <div class="section-title">Ultime attività</div>
+        ${this.recentActivity(g)}
+      </div>`;
+    },
+
+    kpiHTML(label, value, unit, range, dec) {
+      const has = value != null && !isNaN(value);
+      let status = 'ok', pct = 50;
+      if (has && range) {
+        const lo = range[0], hi = range[1];
+        if (value < lo) { status = (value < lo - (hi - lo) * 0.5) ? 'bad' : 'warn'; }
+        else if (value > hi) { status = (value > hi + (hi - lo) * 0.5) ? 'bad' : 'warn'; }
+        pct = U.clamp(((value - lo) / (hi - lo)) * 100, 6, 100);
+      }
+      const targetTxt = range ? `${U.fmt(range[0], dec)}–${U.fmt(range[1], dec)}` : '';
+      return `<div class="kpi ${has ? status : ''}">
+        <div class="k-label">${label}</div>
+        <div class="k-value mono">${has ? U.fmt(value, dec) : '—'}${has && unit ? `<span class="unit">${unit}</span>` : ''}</div>
+        <div class="k-target">target ${targetTxt}${unit ? ' ' + unit : ''}</div>
+        <div class="k-bar"><i style="width:${has ? pct : 0}%"></i></div>
+      </div>`;
+    },
+
+    alertHTML(a) {
+      return `<div class="alert-item ${a.level}">
+        <div class="a-ic">${a.icon}</div>
+        <div><div class="a-tt">${U.esc(a.title)}</div><div class="a-ds">${U.esc(a.text)}</div></div>
+      </div>`;
+    },
+
+    recentActivity(g) {
+      const items = [];
+      Store.entriesFor(g.id).slice(0, 3).forEach(e => items.push({
+        ts: e.date + (e.time || ''), icon: '📝', title: 'Nota: ' + Advice.healthLabel(e.health),
+        sub: (e.notes || '').slice(0, 70)
+      }));
+      Store.interventionsFor(g.id).slice(0, 3).forEach(i => {
+        const type = Store.INTERVENTION_TYPES.find(x => x.id === i.type) || {};
+        items.push({ ts: i.date + (i.time || ''), icon: type.icon || '🔧', title: type.label || i.type, sub: i.notes || '' });
+      });
+      items.sort((a, b) => b.ts.localeCompare(a.ts));
+      if (!items.length) return `<div class="card center muted">Ancora nessuna attività registrata.</div>`;
+      return items.slice(0, 5).map(it => `<div class="entry" style="margin-top:10px">
+        <div class="e-icon">${it.icon}</div>
+        <div class="e-body"><div class="e-title">${U.esc(it.title)}</div>${it.sub ? `<div class="e-sub">${U.esc(it.sub)}</div>` : ''}</div>
+        <div class="e-date">${U.relDay(it.ts.slice(0, 10))}</div>
+      </div>`).join('');
+    },
+
+    /* ================= DIARIO ================= */
+    viewDiary() {
+      const g = this.grow();
+      if (!g) return this.emptyGrow();
+      const entries = Store.entriesFor(g.id);
+      const interventions = Store.interventionsFor(g.id);
+
+      const timeline = [];
+      entries.forEach(e => timeline.push({ kind: 'entry', ts: e.date + (e.time || ''), data: e }));
+      interventions.forEach(i => timeline.push({ kind: 'int', ts: i.date + (i.time || ''), data: i }));
+      timeline.sort((a, b) => b.ts.localeCompare(a.ts));
+
+      const todayEntry = entries.find(e => e.date === U.todayISO());
+
+      return `<div class="screen">
+        <div class="card" style="display:flex;gap:12px;align-items:center">
+          <div style="font-size:28px">${todayEntry ? '✅' : '📝'}</div>
+          <div class="grow">
+            <div style="font-weight:700">${todayEntry ? 'Nota di oggi registrata' : 'Non hai ancora scritto la nota di oggi'}</div>
+            <div class="muted" style="font-size:12.5px">${timeline.length} voci nella timeline</div>
+          </div>
+          <button class="btn primary sm" data-action="add-entry">+ Nota</button>
+        </div>
+
+        <div class="row-btns mt12">
+          <button class="btn sm" data-action="add-intervention">🔧 Intervento</button>
+          <button class="btn sm" data-action="quick-reading">📈 Parametri</button>
+          <button class="btn sm" data-action="go" data-screen="tools">🧮 Strumenti</button>
+        </div>
+
+        <div class="section-title">Timeline</div>
+        ${timeline.length ? timeline.map(it => it.kind === 'entry' ? this.entryCard(it.data) : this.intCard(it.data)).join('')
+          : `<div class="empty"><div class="big">📖</div><p>Il diario è vuoto. Inizia ad annotare la tua giornata!</p></div>`}
+      </div>`;
+    },
+
+    entryCard(e) {
+      const stars = [1, 2, 3, 4, 5].map(i => `<span style="color:${i <= e.health ? 'var(--lime)' : '#3a5044'}">★</span>`).join('');
+      return `<div class="entry">
+        <div class="e-icon">📝</div>
+        <div class="e-body">
+          <div class="flex between aic">
+            <div class="e-title">Nota giornaliera</div>
+            <div class="e-date">${U.fmtDate(e.date, 'short')}${e.time ? ' · ' + e.time : ''}</div>
+          </div>
+          <div class="e-sub">Salute: <span class="mono">${stars}</span> · ${Advice.healthLabel(e.health)}</div>
+          ${e.notes ? `<div class="e-notes">${U.esc(e.notes)}</div>` : ''}
+          ${(e.tags || []).length ? `<div class="mt8">${e.tags.map(t => `<span class="pill green">#${U.esc(t)}</span>`).join(' ')}</div>` : ''}
+          ${(e.photos || []).length ? `<div class="photo-grid">${e.photos.map(p => `<img src="${p}" alt="foto">`).join('')}</div>` : ''}
+          <div class="e-actions mt8">
+            <button class="btn sm ghost" data-action="edit-entry" data-id="${e.id}">✏️</button>
+            <button class="btn sm ghost" data-action="del-entry" data-id="${e.id}" style="color:var(--red)">🗑️</button>
+          </div>
+        </div>
+      </div>`;
+    },
+
+    intCard(i) {
+      const type = Store.INTERVENTION_TYPES.find(x => x.id === i.type) || { icon: '🔧', label: i.type };
+      const bits = [];
+      if (i.amount) bits.push(`dose ${U.esc(i.amount)}`);
+      if (i.product) bits.push(U.esc(i.product));
+      if (i.ph != null) bits.push(`pH ${U.fmt(i.ph, 1)}`);
+      if (i.ec != null) bits.push(`EC ${U.fmt(i.ec, 2)}`);
+      if (i.waterTemp != null) bits.push(`H₂O ${U.fmt(i.waterTemp, 0)}°C`);
+      if (i.hours) bits.push(`${U.esc(i.hours)}h luce`);
+      if (i.potSize) bits.push(`vaso ${U.esc(i.potSize)}`);
+      return `<div class="entry">
+        <div class="e-icon">${type.icon}</div>
+        <div class="e-body">
+          <div class="flex between aic">
+            <div class="e-title">${U.esc(type.label)}</div>
+            <div class="e-date">${U.fmtDate(i.date, 'short')}${i.time ? ' · ' + i.time : ''}</div>
+          </div>
+          ${bits.length ? `<div class="e-sub">${bits.join(' · ')}</div>` : ''}
+          ${i.notes ? `<div class="e-notes">${U.esc(i.notes)}</div>` : ''}
+          <div class="e-actions mt8">
+            <button class="btn sm ghost" data-action="edit-intervention" data-id="${i.id}">✏️</button>
+            <button class="btn sm ghost" data-action="del-intervention" data-id="${i.id}" style="color:var(--red)">🗑️</button>
+          </div>
+        </div>
+      </div>`;
+    },
+
+    /* ================= LIVE ================= */
+    viewLive() {
+      const g = this.grow();
+      if (!g) return this.emptyGrow();
+      const t = Advice.targetFor(g.stage);
+      const last = Live.value || Store.latestReading(g.id) || {};
+      const active = Live.mode !== 'off';
+
+      return `<div class="screen">
+        <div class="card">
+          <div class="flex between aic">
+            <div>
+              <div class="flex gap8 aic"><span class="badge-live ${Live.mode === 'off' ? 'off' : ''}"><span class="dot"></span>${Live.mode === 'off' ? 'OFFLINE' : Live.mode === 'sim' ? 'SIMULAZIONE' : 'REMOTO'}</span></div>
+              <div class="muted" style="font-size:12.5px;margin-top:4px">${Live.mode === 'remote' ? (Live.connected ? 'Connesso al controller' : 'Connessione…') : Live.mode === 'sim' ? 'Generatore locale (nessun hardware)' : 'Nessuna sorgente live'}</div>
+            </div>
+            <div class="row-btns">
+              ${active ? `<button class="btn sm" data-action="live-stop">■ Stop</button>` : ''}
+              <button class="btn sm ${Live.mode === 'sim' ? 'primary' : ''}" data-action="live-sim">▶ Demo</button>
+              <button class="btn sm ${Live.mode === 'remote' ? 'primary' : ''}" data-action="live-remote">📡 Remoto</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-title">Telemetria <span class="badge-live ${Live.mode === 'off' ? 'off' : ''}"><span class="dot"></span>${new Date().toLocaleTimeString('it-IT')}</span></div>
+        <div class="grid grid-2 wide" id="live-kpis">
+          ${this.liveKpis(last, t)}
+        </div>
+        <div class="row-btns mt12">
+          <button class="btn primary sm" data-action="save-reading">💾 Salva lettura</button>
+          <button class="btn sm" data-action="quick-reading">＋ Manuale</button>
+        </div>
+
+        <div class="section-title">Andamento live</div>
+        <div class="card">
+          <div class="chart-wrap" id="live-chart">${this.liveChart()}</div>
+          <div class="legend">
+            <span><i style="background:var(--amber)"></i>Temp °C</span>
+            <span><i style="background:var(--blue)"></i>UR %</span>
+            <span><i style="background:var(--violet)"></i>VPD ×10</span>
+          </div>
+        </div>
+
+        <div class="section-title">Controllo dispositivi</div>
+        <div class="card" id="live-devices">${this.devicesHTML()}</div>
+
+        <div class="section-title">Target ambiente</div>
+        <div class="card">
+          <div class="field">
+            <label>Temperatura target · <span class="mono" id="tgt-temp-l">${U.fmt(Live.targets.temp, 1)}°C</span></label>
+            <input type="range" min="16" max="32" step="0.5" value="${Live.targets.temp}" data-action="target" data-key="temp">
+          </div>
+          <div class="field">
+            <label>Umidità target · <span class="mono" id="tgt-rh-l">${Math.round(Live.targets.rh)}%</span></label>
+            <input type="range" min="30" max="85" step="1" value="${Math.round(Live.targets.rh)}" data-action="target" data-key="rh">
+          </div>
+          <div class="hint">I target guidano i dispositivi in modalità remota (inviati al controller) e la simulazione locale.</div>
+        </div>
+
+        <div class="section-title">Storico (dal diario)</div>
+        <div class="card">
+          <div class="chart-wrap" id="hist-chart">${this.historyChart()}</div>
+          <div class="legend">
+            <span><i style="background:var(--amber)"></i>Temp °C</span>
+            <span><i style="background:var(--blue)"></i>UR %</span>
+          </div>
+          <div class="row-btns mt12">
+            <button class="btn sm" data-action="clear-readings" style="color:var(--red)">🗑️ Svuota storico parametri</button>
+          </div>
+        </div>
+      </div>`;
+    },
+
+    liveKpis(last, t) {
+      return this.kpiHTML('Temperatura', last.temp, '°C', t.tempD, 1) +
+        this.kpiHTML('Umidità', last.rh, '%', t.rh, 0) +
+        this.kpiHTML('VPD', last.vpd, 'kPa', t.vpd, 2) +
+        this.kpiHTML('pH', last.ph, '', t.phSoil, 1) +
+        this.kpiHTML('EC', last.ec, 'mS', t.ec, 2) +
+        this.kpiHTML('PPFD', last.ppfd, 'µmol', t.ppfd, 0) +
+        this.kpiHTML('CO₂', last.co2, 'ppm', [-100, 5000], 0) +
+        this.kpiHTML('H₂O', last.waterTemp, '°C', [18, 22], 0);
+    },
+
+    devicesHTML() {
+      return Live.DEVICES.map(d => {
+        const on = !!Live.devices[d.id];
+        return `<div class="toggle-row">
+          <div class="flex gap12 aic"><div style="font-size:22px">${d.icon}</div><div class="t-title">${d.label}</div></div>
+          <label class="switch"><input type="checkbox" data-action="device" data-id="${d.id}" ${on ? 'checked' : ''}><span class="slider"></span></label>
+        </div>`;
+      }).join('');
+    },
+
+    liveChart() {
+      const h = Live.history.slice(-90);
+      if (h.length < 2) return `<div class="empty" style="padding:18px">Avvia la sorgente live (Demo o Remoto) per vedere il grafico in tempo reale.</div>`;
+      const series = [
+        { name: 'temp', color: '#ffb020', points: h.map((s, i) => ({ x: i, y: s.temp })) },
+        { name: 'rh', color: '#4aa8ff', points: h.map((s, i) => ({ x: i, y: s.rh })) },
+        { name: 'vpd', color: '#b48bff', points: h.map((s, i) => ({ x: i, y: (s.vpd || 0) * 10 })) }
+      ];
+      return Charts.line(series, { height: 170, decimals: 0, xLabels: ['', 'ora'] });
+    },
+
+    historyChart() {
+      const r = Store.readingsFor().slice(-40).filter(x => x.temp != null || x.rh != null);
+      if (r.length < 2) return `<div class="empty" style="padding:18px">Registra almeno due letture per vedere lo storico.</div>`;
+      const series = [
+        { name: 'temp', color: '#ffb020', points: r.map((s, i) => ({ x: i, y: s.temp })).filter(p => p.y != null) },
+        { name: 'rh', color: '#4aa8ff', points: r.map((s, i) => ({ x: i, y: s.rh })).filter(p => p.y != null) }
+      ];
+      const first = r[0].date || r[0].ts.slice(0, 10);
+      const lastD = r[r.length - 1].date || r[r.length - 1].ts.slice(0, 10);
+      return Charts.line(series, { height: 160, decimals: 0, xLabels: [U.fmtDate(first, 'short'), U.fmtDate(lastD, 'short')] });
+    },
+
+    refreshLiveDom() {
+      const t = this.target();
+      const last = Live.value || {};
+      const kpis = U.$('#live-kpis');
+      if (kpis) kpis.innerHTML = this.liveKpis(last, t);
+      const chart = U.$('#live-chart');
+      if (chart) chart.innerHTML = this.liveChart();
+      const dev = U.$('#live-devices');
+      if (dev) {
+        Live.DEVICES.forEach(d => {
+          const cb = dev.querySelector(`input[data-id="${d.id}"]`);
+          if (cb) cb.checked = !!Live.devices[d.id];
+        });
+      }
+      const homeKpis = U.$('#home-kpis');
+      if (homeKpis) homeKpis.innerHTML = this.kpiHTML('Temperatura', last.temp, '°C', t.tempD, 1) +
+        this.kpiHTML('Umidità', last.rh, '%', t.rh, 0) +
+        this.kpiHTML('VPD', last.vpd, 'kPa', t.vpd, 2) +
+        this.kpiHTML('pH', last.ph, '', t.phSoil, 1);
+    },
+
+    liveOrLast() {
+      if (Live.value) return Live.value;
+      const g = this.grow();
+      return (g && Store.latestReading(g.id)) || {};
+    },
+
+    /* ================= STRUMENTI ================= */
+    viewTools() {
+      const g = this.grow();
+      const t = this.target();
+      const tip = Advice.dailyTip(g);
+      const week = g ? Advice.weekOf(g) : 1;
+      const ns = g ? Advice.nutrientSchedule(g, week) : null;
+
+      return `<div class="screen">
+        <div class="card">
+          <div class="flex gap12 aic"><div style="font-size:30px">${tip.icon}</div>
+            <div><div style="font-weight:800">${U.esc(tip.title)}</div><div class="muted" style="font-size:13.5px;margin-top:4px">${U.esc(tip.text)}</div></div>
+          </div>
+        </div>
+
+        ${g ? `<div class="section-title">Schema nutrienti — settimana ${week}</div>
+        <div class="card">
+          <div class="flex between" style="padding:6px 0"><span class="muted">Base</span><b>${U.esc(ns.base)}</b></div>
+          <div class="flex between" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">Additivi</span><b>${U.esc(ns.boost)}</b></div>
+          <div class="hint mt8">${U.esc(ns.note)}</div>
+        </div>` : ''}
+
+        <div class="section-title">Range target per stadio</div>
+        <div class="card">
+          <table style="width:100%;border-collapse:collapse;font-size:12.5px" class="mono">
+            <tr class="mute2" style="text-align:left">
+              <th style="padding:6px 4px">Stadio</th><th>T°</th><th>UR%</th><th>VPD</th><th>pH</th><th>EC</th>
+            </tr>
+            ${Store.STAGES.map(s => {
+              const tt = Advice.targetFor(s.id);
+              const cur = g && g.stage === s.id ? 'style="background:rgba(55,214,122,.10)"' : '';
+              return `<tr ${cur} style="border-top:1px solid var(--line)">
+                <td style="padding:7px 4px;font-weight:600">${s.label}</td>
+                <td>${tt.tempD[0]}–${tt.tempD[1]}</td>
+                <td>${tt.rh[0]}–${tt.rh[1]}</td>
+                <td>${tt.vpd ? tt.vpd[0] + '–' + tt.vpd[1] : '—'}</td>
+                <td>${tt.phSoil[0]}–${tt.phSoil[1]}</td>
+                <td>${tt.ec[0]}–${tt.ec[1]}</td>
+              </tr>`;
+            }).join('')}
+          </table>
+        </div>
+
+        <div class="section-title">Fotoperiodo</div>
+        <div class="card">
+          <div class="flex between" style="padding:6px 0"><span class="muted">Vegetativa</span><b class="mono">${g ? g.schedule.vegHours : 18}/24 h</b></div>
+          <div class="flex between" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">Fioritura</span><b class="mono">${g ? g.schedule.flowerHours : 12}/24 h</b></div>
+          <div class="hint mt8">Lo stadio corrente richiede ~${t.lightHours}h di luce. Mantieni il buio assoluto: interruzioni in fioritura causano ermafroditismo.</div>
+        </div>
+
+        <div class="section-title">Calcolatori</div>
+        ${this.calcCards()}
+      </div>`;
+    },
+
+    calcCards() {
+      const last = this.liveOrLast();
+      const t = this.target();
+      return `
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:10px">🌡️ VPD (deficit di pressione di vapore)</div>
+          <div class="field-row">
+            <div class="field"><label>Temp aria °C</label><input class="input" type="number" inputmode="decimal" id="calc-vpd-t" value="${U.numStr(last.temp != null ? last.temp : 25, 1)}" data-action="calc"></div>
+            <div class="field"><label>UR %</label><input class="input" type="number" inputmode="decimal" id="calc-vpd-rh" value="${U.numStr(last.rh != null ? last.rh : 60, 0)}" data-action="calc"></div>
+          </div>
+          <div class="field"><label>Δ foglia (°C)</label><input class="input" type="number" inputmode="decimal" id="calc-vpd-off" value="${U.numStr(Store.state.settings.leafOffset, 1)}" data-action="calc"></div>
+          <div class="card" style="background:var(--surface-2);box-shadow:none">
+            <div class="flex between aic"><span class="muted">VPD stimato</span><b class="mono" id="out-vpd" style="font-size:20px">—</b></div>
+            <div class="hint mt8" id="out-vpd-hint"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:10px">💡 DLI (luce giornaliera integrata)</div>
+          <div class="field-row">
+            <div class="field"><label>PPFD (µmol/m²/s)</label><input class="input" type="number" inputmode="decimal" id="calc-dli-p" value="${U.numStr(last.ppfd != null ? last.ppfd : 450)}" data-action="calc"></div>
+            <div class="field"><label>Ore di luce</label><input class="input" type="number" inputmode="decimal" id="calc-dli-h" value="${U.numStr(t.lightHours)}" data-action="calc"></div>
+          </div>
+          <div class="card" style="background:var(--surface-2);box-shadow:none">
+            <div class="flex between aic"><span class="muted">DLI</span><b class="mono" id="out-dli" style="font-size:20px">—</b></div>
+            <div class="hint mt8" id="out-dli-hint"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:10px">📊 Conversione EC ⇄ PPM</div>
+          <div class="field-row">
+            <div class="field"><label>EC (mS/cm)</label><input class="input" type="number" inputmode="decimal" id="calc-ec" value="1.4" data-action="calc"></div>
+            <div class="field"><label>PPM (scala 500)</label><input class="input" type="number" inputmode="decimal" id="calc-ppm" value="700" data-action="calc"></div>
+          </div>
+          <div class="hint">PPM = EC × 500 · EC = PPM ÷ 500 (le centraline UK usano scala 700: ×700).</div>
+        </div>
+
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:10px">🧪 Diluizione soluzione</div>
+          <div class="field-row">
+            <div class="field"><label>EC attuale</label><input class="input" type="number" inputmode="decimal" id="calc-dil-cur" value="2.2" data-action="calc"></div>
+            <div class="field"><label>EC desiderata</label><input class="input" type="number" inputmode="decimal" id="calc-dil-tgt" value="1.4" data-action="calc"></div>
+          </div>
+          <div class="field"><label>Volume tanica (L)</label><input class="input" type="number" inputmode="decimal" id="calc-dil-vol" value="10" data-action="calc"></div>
+          <div class="card" style="background:var(--surface-2);box-shadow:none">
+            <div class="hint" id="out-dil">—</div>
+          </div>
+        </div>`;
+    },
+
+    /* ================= SETUP ================= */
+    viewSetup() {
+      const g = this.grow();
+      const rem = Store.state.settings.remote;
+      const stages = Store.STAGES;
+
+      return `<div class="screen">
+        <div class="section-title">Coltivazioni</div>
+        ${g ? `<div class="card">
+          <div class="flex between aic">
+            <div><div style="font-weight:800">${U.esc(g.name)}</div><div class="muted" style="font-size:12.5px">${U.esc(g.strain || '')} · dal ${U.fmtDate(g.startDate, 'short')}</div></div>
+            <button class="btn sm" data-action="edit-grow">✏️ Modifica</button>
+          </div>
+          <div class="mt12">
+            <div class="section-title" style="margin:8px 0 6px">Stadio corrente</div>
+            <div class="chip-group">
+              ${stages.map(s => `<button class="chip ${g.stage === s.id ? 'active' : ''}" data-action="set-stage" data-stage="${s.id}">${s.label}</button>`).join('')}
+            </div>
+          </div>
+        </div>` : `<div class="card center muted">Nessuna coltivazione. Creane una.</div>`}
+
+        <div class="row-btns mt12">
+          <button class="btn primary sm" data-action="new-grow">+ Nuova</button>
+          ${Store.state.grows.length > 1 ? `<button class="btn sm" data-action="switch-grow">🔄 Cambia attiva</button>` : ''}
+          ${g ? `<button class="btn sm danger" data-action="del-grow">🗑️ Elimina attiva</button>` : ''}
+        </div>
+
+        <div class="section-title">Preferenze</div>
+        <div class="card">
+          <div class="field-row">
+            <div class="field"><label>Δ foglia (VPD) °C</label><input class="input" type="number" step="0.5" id="set-leaf" value="${U.numStr(Store.state.settings.leafOffset, 1)}" data-action="setting" data-key="leafOffset"></div>
+            <div class="field"><label>Intervallo live (s)</label><input class="input" type="number" inputmode="numeric" id="set-live" value="${Store.state.settings.liveInterval}" data-action="setting" data-key="liveInterval"></div>
+          </div>
+          <div class="toggle-row">
+            <div><div class="t-title">Notifiche alert</div><div class="t-sub">Avvisi su parametri critici e task</div></div>
+            <label class="switch"><input type="checkbox" data-action="toggle-setting" data-key="notifications" ${Store.state.settings.notifications ? 'checked' : ''}><span class="slider"></span></label>
+          </div>
+        </div>
+
+        <div class="section-title">Controllo remoto (tempo reale)</div>
+        <div class="card">
+          <div class="toggle-row">
+            <div><div class="t-title">Backend remoto</div><div class="t-sub">Collega sensori e attuatori via WebSocket</div></div>
+            <label class="switch"><input type="checkbox" data-action="toggle-remote" ${rem.enabled ? 'checked' : ''}><span class="slider"></span></label>
+          </div>
+          <div class="field mt12"><label>URL WebSocket</label><input class="input" type="url" id="rem-url" placeholder="wss://tuo-server.esempio" value="${U.esc(rem.url)}" data-action="setting" data-key="remote.url"></div>
+          <div class="field-row">
+            <div class="field"><label>Stanza / Room</label><input class="input" id="rem-room" value="${U.esc(rem.room)}" data-action="setting" data-key="remote.room"></div>
+            <div class="field"><label>Token (opz.)</label><input class="input" id="rem-token" value="${U.esc(rem.token)}" data-action="setting" data-key="remote.token"></div>
+          </div>
+          <div class="row-btns">
+            <button class="btn primary sm" data-action="live-remote">📡 Connetti ora</button>
+            <button class="btn sm" data-action="live-sim">▶ Modalità demo</button>
+          </div>
+          <div class="hint mt8">Senza backend puoi usare la <b>modalità demo</b>: simula sensori e attuatori sul telefono. Per il controllo reale vedi la cartella <b>server/</b> (backend Node.js pronto da avviare/deployare).</div>
+        </div>
+
+        <div class="section-title">Dati</div>
+        <div class="card">
+          <div class="row-btns">
+            <button class="btn sm" data-action="export">⬇️ Esporta backup</button>
+            <button class="btn sm" data-action="import">⬆️ Importa backup</button>
+            <button class="btn sm" data-action="demo">🎬 Carica demo</button>
+          </div>
+          <div class="row-btns mt12">
+            <button class="btn sm danger" data-action="reset">♻️ Azzera tutti i dati</button>
+          </div>
+          <div class="hint mt8">Il backup è un file JSON con tutti i tuoi dati. Conservalo: è il tuo diario personale.</div>
+        </div>
+
+        <div class="section-title">Informazioni</div>
+        <div class="card">
+          <div class="flex between" style="padding:6px 0"><span class="muted">App</span><b>Maria · Diario Indoor</b></div>
+          <div class="flex between" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">Versione</span><b class="mono">1.0.0</b></div>
+          <div class="flex between" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">Modalità live</span><b>${Live.mode}</b></div>
+          <div class="hint mt8">I dati restano sul tuo dispositivo (localStorage). Nessun dato inviato senza backend remoto attivo.</div>
+        </div>
+
+        <div class="center mute2" style="font-size:11px;margin-top:18px;line-height:1.6">
+          ⚠️ Strumento personale di tracciamento. Verifica sempre la normativa del tuo Paese.<br>
+          Fatto con 🌱 per la tua coltivazione indoor.
+        </div>
+      </div>`;
+    },
+
+    /* ================= EVENTI ================= */
+    bindEvents() {
+      document.addEventListener('click', (e) => {
+        const t = e.target.closest('[data-action]');
+        if (!t) return;
+        const action = t.dataset.action;
+        if (['calc', 'device', 'target', 'setting', 'toggle-setting', 'toggle-remote'].includes(action)) return; // gestiti su input/change
+        e.preventDefault();
+        this.onClick(action, t);
+      });
+
+      document.addEventListener('change', (e) => {
+        const t = e.target.closest('[data-action]');
+        if (!t) return;
+        const a = t.dataset.action;
+        if (a === 'device') { Live.toggleDevice(t.dataset.id, t.checked); if (this.screen === 'live') this.refreshLiveDom(); }
+        else if (a === 'setting') Store.setSetting(t.dataset.key, U.num(t.value) != null ? U.num(t.value) : t.value);
+        else if (a === 'toggle-setting') Store.setSetting(t.dataset.key, t.checked);
+        else if (a === 'toggle-remote') { Store.setSetting('remote.enabled', t.checked); }
+      });
+
+      document.addEventListener('input', (e) => {
+        const t = e.target.closest('[data-action]');
+        if (!t) return;
+        if (t.dataset.action === 'target') {
+          const key = t.dataset.key;
+          Live.setTargets({ [key]: U.num(t.value) });
+          const lbl = U.$('#tgt-' + key + '-l');
+          if (lbl) lbl.textContent = key === 'temp' ? U.fmt(t.value, 1) + '°C' : Math.round(t.value) + '%';
+        } else if (t.dataset.action === 'calc') {
+          this.runCalc();
+        }
+      });
+    },
+
+    onClick(action, el) {
+      const g = this.grow();
+      switch (action) {
+        case 'go': this.go(el.dataset.screen); break;
+        case 'new-grow': this.growForm(); break;
+        case 'edit-grow': this.growForm(g); break;
+        case 'del-grow': this.confirm('Elimina coltivazione', 'Tutti i dati (note, interventi, parametri) di questa coltivazione verranno rimossi.', () => { Store.removeGrow(g.id); this.render(); U.toast('Coltivazione eliminata'); }); break;
+        case 'switch-grow': this.switchGrow(); break;
+        case 'set-stage': Store.setStage(g.id, el.dataset.stage); this.render(); U.toast('Stadio aggiornato'); break;
+        case 'demo': this.confirm('Carica dati demo', 'Verranno sovrascritti i dati attuali con una coltivazione di esempio.', () => { Store.seedDemo(); this.go('home'); U.toast('Demo caricata'); }); break;
+        case 'reset': this.confirm('Azzerare tutto?', 'Tutti i dati verranno cancellati definitivamente.', () => { Store.reset(); this.go('home'); U.toast('Dati azzerati'); }); break;
+        case 'add-entry': this.entryForm(); break;
+        case 'edit-entry': this.entryForm(Store.state.entries.find(x => x.id === el.dataset.id)); break;
+        case 'del-entry': this.confirm('Elimina nota', 'Vuoi eliminare questa nota giornaliera?', () => { Store.removeEntry(el.dataset.id); this.render(); }); break;
+        case 'add-intervention': this.interventionForm(null, 'irrigazione'); break;
+        case 'edit-intervention': this.interventionForm(Store.state.interventions.find(x => x.id === el.dataset.id)); break;
+        case 'del-intervention': this.confirm('Elimina intervento', 'Vuoi eliminare questo intervento?', () => { Store.removeIntervention(el.dataset.id); this.render(); }); break;
+        case 'quick': this.quickAction(el.dataset.kind); break;
+        case 'quick-reading': this.readingForm(false); break;
+        case 'save-reading': if (Live.value) { Live.saveCurrent(); this.render(); } else { this.readingForm(false); } break;
+        case 'live-sim': if (Live.mode === 'sim') { Live.stop(); } else { Live.startSim(); U.toast('▶ Simulazione attiva'); } this.render(); break;
+        case 'live-remote': if (Live.mode === 'remote') { Live.stop(); this.render(); } else { const r = Store.state.settings.remote; if (!r.url) { U.toast('Configura prima l’URL WebSocket in Setup'); this.go('setup'); } else { Live.startRemote(r.url, r.room, r.token); this.go('live'); } } break;
+        case 'live-stop': Live.stop(); this.render(); break;
+        case 'clear-readings': this.confirm('Svuota storico', 'Verranno rimossi tutti i campioni dei parametri.', () => { Store.state.readings = Store.state.readings.filter(r => r.growId !== g.id); Store.save(); this.render(); }); break;
+        case 'export': this.exportData(); break;
+        case 'import': this.importData(); break;
+        case 'modal-close': this.closeModal(); break;
+        case 'modal-confirm': this.modalConfirm(); break;
+      }
+    },
+
+    quickAction(kind) {
+      if (kind === 'entry' || kind === 'obs') this.entryForm(null, kind === 'obs');
+      else this.interventionForm(null, kind); // 'irrigazione' | 'nutrizione'
+    },
+
+    /* ================= MODALE ================= */
+    openModal(title, bodyHTML, opts) {
+      this.closeModal();
+      this.modalOpts = opts || {};
+      const wrap = document.createElement('div');
+      wrap.className = 'modal-backdrop';
+      wrap.innerHTML = `<div class="modal">
+        <div class="m-handle"></div>
+        <div class="m-title">${U.esc(title)}</div>
+        <div id="modal-body">${bodyHTML}</div>
+        <div class="m-actions">
+          <button class="btn ghost" data-action="modal-close">Annulla</button>
+          <button class="btn ${opts && opts.danger ? 'danger' : 'primary'}" data-action="modal-confirm">${U.esc((opts && opts.confirmLabel) || 'Salva')}</button>
+        </div>
+      </div>`;
+      wrap.addEventListener('click', (ev) => { if (ev.target === wrap) this.closeModal(); });
+      document.body.appendChild(wrap);
+      const first = wrap.querySelector('input, textarea, select');
+      setTimeout(() => { if (first) first.focus(); }, 250);
+    },
+
+    closeModal() { const m = U.$('.modal-backdrop'); if (m) m.remove(); this.modalOpts = null; },
+
+    modalConfirm() {
+      const opts = this.modalOpts || {};
+      if (opts.onConfirm) {
+        const body = U.$('#modal-body');
+        const data = {};
+        body.querySelectorAll('[data-field]').forEach(f => { data[f.dataset.field] = f.value; });
+        body.querySelectorAll('input[type="checkbox"][data-field]').forEach(f => { data[f.dataset.field] = f.checked; });
+        opts.onConfirm(data);
+      }
+      this.closeModal();
+    },
+
+    confirm(title, text, onConfirm, label) {
+      this.openModal(title, `<p class="muted">${U.esc(text)}</p>`, { confirmLabel: label || 'Conferma', danger: true, onConfirm });
+    },
+
+    switchGrow() {
+      const body = `<div class="chip-group">${Store.state.grows.map(g =>
+        `<button class="chip ${g.id === Store.state.activeGrowId ? 'active' : ''}" data-field-pick="${g.id}">${U.esc(g.name)}</button>`).join('')}</div>`;
+      this.openModal('Coltivazione attiva', body, {
+        confirmLabel: 'Imposta', onConfirm: () => {}
+      });
+      // gestione selezione dedicata
+      const modal = U.$('.modal-backdrop');
+      modal.querySelectorAll('[data-field-pick]').forEach(b => b.addEventListener('click', () => {
+        Store.state.activeGrowId = b.dataset.fieldPick; Store.save(); this.closeModal(); this.render(); U.toast('Coltivazione attiva cambiata');
+      }));
+    },
+
+    /* ================= BACKUP ================= */
+    exportData() {
+      const blob = new Blob([Store.exportJSON()], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'maria-backup-' + U.todayISO() + '.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      U.toast('⬇️ Backup esportato');
+    },
+
+    importData() {
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = 'application/json,.json';
+      input.addEventListener('change', () => {
+        const f = input.files[0];
+        if (!f) return;
+        const r = new FileReader();
+        r.onload = () => {
+          try { Store.importJSON(r.result); this.go('home'); U.toast('⬆️ Backup importato'); }
+          catch (e) { U.toast('❌ File non valido'); }
+        };
+        r.readAsText(f);
+      });
+      input.click();
+    },
+
+    /* ================= FORM: GROW ================= */
+    growForm(g) {
+      const isNew = !g;
+      g = g || {};
+      const stages = Store.STAGES;
+      const body = `
+        <div class="field"><label>Nome coltivazione</label><input class="input" data-field="name" value="${U.esc(g.name || 'Run #' + (Store.state.grows.length + 1))}"></div>
+        <div class="field"><label>Varietà (strain)</label><input class="input" data-field="strain" value="${U.esc(g.strain || '')}" placeholder="es. Northern Lights Auto"></div>
+        <div class="field"><label>Genetica / note</label><input class="input" data-field="genetics" value="${U.esc(g.genetics || '')}" placeholder="es. Indica dominante · Fotoperiodica"></div>
+        <div class="field-row">
+          <div class="field"><label>Data inizio</label><input class="input" type="date" data-field="startDate" value="${g.startDate || U.todayISO()}"></div>
+          <div class="field"><label>Stadio</label><select class="select" data-field="stage">${stages.map(s => `<option value="${s.id}" ${g.stage === s.id ? 'selected' : ''}>${s.label}</option>`).join('')}</select></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Substrato</label><input class="input" data-field="medium" value="${U.esc(g.medium || 'Terra')}" placeholder="Terra / Coco / Idroponica"></div>
+          <div class="field"><label>Vaso</label><input class="input" data-field="potSize" value="${U.esc(g.potSize || '')}" placeholder="es. 11 L"></div>
+        </div>
+        <div class="field"><label>Luce / lampada</label><input class="input" data-field="light" value="${U.esc(g.light || '')}" placeholder="es. LED 240W"></div>
+        <div class="field-row">
+          <div class="field"><label>Ore luce vegetativa</label><input class="input" type="number" data-field="vegHours" value="${g.schedule ? g.schedule.vegHours : 18}"></div>
+          <div class="field"><label>Ore luce fioritura</label><input class="input" type="number" data-field="flowerHours" value="${g.schedule ? g.schedule.flowerHours : 12}"></div>
+        </div>`;
+      this.openModal(isNew ? 'Nuova coltivazione' : 'Modifica coltivazione', body, {
+        confirmLabel: isNew ? 'Crea' : 'Salva',
+        onConfirm: (d) => {
+          const patch = {
+            name: d.name, strain: d.strain, genetics: d.genetics, startDate: d.startDate,
+            stage: d.stage, medium: d.medium, potSize: d.potSize, light: d.light,
+            schedule: { vegHours: U.num(d.vegHours) || 18, flowerHours: U.num(d.flowerHours) || 12 }
+          };
+          if (isNew) { Store.addGrow(patch); U.toast('🌱 Coltivazione creata'); }
+          else { Store.updateGrow(g.id, patch); U.toast('Salvato'); }
+          this.render();
+        }
+      });
+    },
+
+    /* ================= FORM: NOTA ================= */
+    entryForm(entry, isObs) {
+      if (!entry && !this.grow()) { U.toast('Crea prima una coltivazione'); return; }
+      const e = entry || {};
+      const placeholder = isObs
+        ? 'Osservazione: colore foglie, segni di carenza/eccessi, parassiti, odore, crescita, tricomi…'
+        : 'Cosa è successo oggi? Come sta la pianta? Note, sensazioni, osservazioni…';
+      const tags = (e.tags || []).join(', ');
+      const body = `
+        <div class="field-row">
+          <div class="field"><label>Data</label><input class="input" type="date" data-field="date" value="${e.date || U.todayISO()}"></div>
+          <div class="field"><label>Ora</label><input class="input" type="time" data-field="time" value="${e.time || U.nowTime()}"></div>
+        </div>
+        <div class="field"><label>Salute pianta</label>
+          <input type="range" min="1" max="5" step="1" data-field="health" value="${e.health || 4}" oninput="document.getElementById('health-lbl').textContent=this.value+' ★'">
+          <div class="hint" id="health-lbl">${e.health || 4} ★</div>
+        </div>
+        <div class="field"><label>Note</label><textarea class="textarea" data-field="notes" placeholder="${placeholder}">${U.esc(e.notes || '')}</textarea></div>
+        <div class="field"><label>Tag (separati da virgola)</label><input class="input" data-field="tags" value="${U.esc(tags)}" placeholder="training, salute ok, defogliazione"></div>
+        <div class="field"><label>Foto (opzionale)</label><input class="input" type="file" accept="image/*" multiple id="entry-photos">
+          <div class="hint">Le foto restano solo sul tuo dispositivo (ridimensionate automaticamente).</div></div>`;
+      this.openModal(entry ? 'Modifica nota' : (isObs ? 'Osservazione pianta' : 'Nota giornaliera'), body, {
+        confirmLabel: entry ? 'Salva' : 'Aggiungi',
+        onConfirm: (d) => {
+          const photos = (entry && entry.photos) || [];
+          const el = document.getElementById('entry-photos');
+          this.readPhotos(el, (imgs) => {
+            const patch = {
+              date: d.date, time: d.time, health: U.num(d.health) || 3,
+              notes: d.notes, tags: (d.tags || '').split(',').map(t => t.trim()).filter(Boolean),
+              photos: (imgs && imgs.length) ? imgs : photos
+            };
+            if (entry) Store.updateEntry(entry.id, patch); else Store.addEntry(patch);
+            this.go('diary'); U.toast(entry ? 'Nota aggiornata' : '📝 Nota salvata');
+          });
+        }
+      });
+    },
+
+    // Legge e ridimensiona le foto selezionate (per non saturare il localStorage)
+    readPhotos(inputEl, cb) {
+      if (!inputEl || !inputEl.files || !inputEl.files.length) { cb(null); return; }
+      const files = Array.from(inputEl.files).slice(0, 3);
+      const out = [];
+      let pending = files.length;
+      files.forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const max = 900;
+            let w = img.width, h = img.height;
+            if (w > max) { h = h * max / w; w = max; }
+            const c = document.createElement('canvas');
+            c.width = w; c.height = h;
+            c.getContext('2d').drawImage(img, 0, 0, w, h);
+            out.push(c.toDataURL('image/jpeg', 0.7));
+            if (--pending === 0) cb(out);
+          };
+          img.onerror = () => { if (--pending === 0) cb(out); };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    },
+
+    /* ================= FORM: INTERVENTO ================= */
+    interventionForm(it, presetType) {
+      if (!it && !this.grow()) { U.toast('Crea prima una coltivazione'); return; }
+      const e = it || {};
+      const typeId = e.type || presetType || 'irrigazione';
+      const body = `
+        <div class="field"><label>Tipo intervento</label>
+          <select class="select" data-field="type" id="int-type">${Store.INTERVENTION_TYPES.map(t =>
+            `<option value="${t.id}" ${t.id === typeId ? 'selected' : ''}>${t.icon} ${t.label}</option>`).join('')}</select>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Data</label><input class="input" type="date" data-field="date" value="${e.date || U.todayISO()}"></div>
+          <div class="field"><label>Ora</label><input class="input" type="time" data-field="time" value="${e.time || U.nowTime()}"></div>
+        </div>
+        <div id="int-extra">${this.intFieldsHTML(typeId, e)}</div>
+        <div class="field"><label>Note</label><textarea class="textarea" data-field="notes">${U.esc(e.notes || '')}</textarea></div>`;
+      this.openModal(it ? 'Modifica intervento' : 'Nuovo intervento', body, {
+        confirmLabel: it ? 'Salva' : 'Registra',
+        onConfirm: (d) => {
+          const patch = {
+            type: d.type, date: d.date, time: d.time, notes: d.notes,
+            amount: d.amount || null, ph: U.num(d.ph), ec: U.num(d.ec),
+            product: d.product || null, hours: U.num(d.hours),
+            potSize: d.potSize || null, nodes: U.num(d.nodes),
+            water: d.water || null, waterTemp: U.num(d.waterTemp)
+          };
+          if (it) Store.updateIntervention(it.id, patch); else Store.addIntervention(patch);
+          if (patch.ph != null || patch.ec != null) {
+            Store.addReading({ date: patch.date, ph: patch.ph, ec: patch.ec, source: 'intervento' });
+          }
+          this.go('diary'); U.toast(it ? 'Intervento aggiornato' : '🔧 Intervento registrato');
+        }
+      });
+      const sel = document.getElementById('int-type');
+      sel.addEventListener('change', () => {
+        document.getElementById('int-extra').innerHTML = this.intFieldsHTML(sel.value, {});
+      });
+    },
+
+    intFieldsHTML(typeId, e) {
+      e = e || {};
+      const map = {
+        irrigazione: `
+          <div class="field-row">
+            <div class="field"><label>Volume acqua (L)</label><input class="input" type="number" inputmode="decimal" data-field="amount" value="${e.amount || ''}" placeholder="es. 2"></div>
+            <div class="field"><label>pH</label><input class="input" type="number" inputmode="decimal" data-field="ph" value="${e.ph != null ? e.ph : ''}"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>EC mS/cm</label><input class="input" type="number" inputmode="decimal" data-field="ec" value="${e.ec != null ? e.ec : ''}"></div>
+            <div class="field"><label>Temp acqua °C</label><input class="input" type="number" inputmode="decimal" data-field="waterTemp" value="${e.waterTemp != null ? e.waterTemp : ''}"></div>
+          </div>`,
+        nutrizione: `
+          <div class="field"><label>Prodotto / fertilizzante</label><input class="input" data-field="product" value="${U.esc(e.product || '')}" placeholder="es. Bio Grow"></div>
+          <div class="field-row">
+            <div class="field"><label>Dose</label><input class="input" data-field="amount" value="${U.esc(e.amount || '')}" placeholder="es. 1 ml/L"></div>
+            <div class="field"><label>Volume soluzione (L)</label><input class="input" type="number" inputmode="decimal" data-field="water" value="${e.water != null ? e.water : ''}"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>pH</label><input class="input" type="number" inputmode="decimal" data-field="ph" value="${e.ph != null ? e.ph : ''}"></div>
+            <div class="field"><label>EC mS/cm</label><input class="input" type="number" inputmode="decimal" data-field="ec" value="${e.ec != null ? e.ec : ''}"></div>
+          </div>`,
+        ph: `
+          <div class="field-row">
+            <div class="field"><label>pH</label><input class="input" type="number" inputmode="decimal" data-field="ph" value="${e.ph != null ? e.ph : ''}"></div>
+            <div class="field"><label>Prodotto</label><input class="input" data-field="product" value="${U.esc(e.product || '')}" placeholder="pH up / pH down"></div>
+          </div>
+          <div class="field"><label>Dose</label><input class="input" data-field="amount" value="${U.esc(e.amount || '')}" placeholder="es. 3 ml"></div>`,
+        ec: `
+          <div class="field-row">
+            <div class="field"><label>EC mS/cm</label><input class="input" type="number" inputmode="decimal" data-field="ec" value="${e.ec != null ? e.ec : ''}"></div>
+            <div class="field"><label>Prodotto</label><input class="input" data-field="product" value="${U.esc(e.product || '')}"></div>
+          </div>`,
+        topping: `<div class="field"><label>Nodi tagliati</label><input class="input" type="number" inputmode="numeric" data-field="nodes" value="${e.nodes != null ? e.nodes : ''}"></div>`,
+        trasloco: `<div class="field"><label>Nuova dimensione vaso</label><input class="input" data-field="potSize" value="${U.esc(e.potSize || '')}" placeholder="es. 18 L"></div>`,
+        illuminazione: `
+          <div class="field-row">
+            <div class="field"><label>Ore di luce</label><input class="input" type="number" inputmode="decimal" data-field="hours" value="${e.hours != null ? e.hours : ''}" placeholder="18 / 12"></div>
+            <div class="field"><label>PPFD</label><input class="input" type="number" inputmode="decimal" data-field="ppfd" value=""></div>
+          </div>`,
+        parassiti: `
+          <div class="field"><label>Prodotto</label><input class="input" data-field="product" value="${U.esc(e.product || '')}" placeholder="es. olio di neem"></div>
+          <div class="field"><label>Dose</label><input class="input" data-field="amount" value="${U.esc(e.amount || '')}"></div>`,
+        cambio_acqua: `
+          <div class="field-row">
+            <div class="field"><label>Volume (L)</label><input class="input" type="number" inputmode="decimal" data-field="water" value="${e.water != null ? e.water : ''}"></div>
+            <div class="field"><label>pH</label><input class="input" type="number" inputmode="decimal" data-field="ph" value="${e.ph != null ? e.ph : ''}"></div>
+          </div>
+          <div class="field"><label>EC mS/cm</label><input class="input" type="number" inputmode="decimal" data-field="ec" value="${e.ec != null ? e.ec : ''}"></div>`
+      };
+      return map[typeId] || '';
+    },
+
+    /* ================= FORM: LETTURA PARAMETRI ================= */
+    readingForm(fromLive) {
+      if (!this.grow()) { U.toast('Crea prima una coltivazione'); return; }
+      const src = (fromLive && Live.value) ? Live.value : (this.liveOrLast() || {});
+      const body = `
+        <div class="field-row">
+          <div class="field"><label>Temperatura °C</label><input class="input" type="number" inputmode="decimal" data-field="temp" value="${U.numStr(src.temp, 1)}"></div>
+          <div class="field"><label>Umidità %</label><input class="input" type="number" inputmode="decimal" data-field="rh" value="${U.numStr(src.rh, 0)}"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>VPD kPa (auto)</label><input class="input" type="number" inputmode="decimal" data-field="vpd" value="${U.numStr(src.vpd, 2)}"></div>
+          <div class="field"><label>pH</label><input class="input" type="number" inputmode="decimal" data-field="ph" value="${U.numStr(src.ph, 2)}"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>EC mS/cm</label><input class="input" type="number" inputmode="decimal" data-field="ec" value="${U.numStr(src.ec, 2)}"></div>
+          <div class="field"><label>PPFD</label><input class="input" type="number" inputmode="decimal" data-field="ppfd" value="${U.numStr(src.ppfd, 0)}"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>CO₂ ppm</label><input class="input" type="number" inputmode="decimal" data-field="co2" value="${U.numStr(src.co2, 0)}"></div>
+          <div class="field"><label>Temp acqua °C</label><input class="input" type="number" inputmode="decimal" data-field="waterTemp" value="${U.numStr(src.waterTemp, 0)}"></div>
+        </div>
+        <div class="hint">Se lasci il VPD vuoto viene calcolato automaticamente da temperatura e umidità.</div>`;
+      this.openModal('Lettura parametri', body, {
+        confirmLabel: 'Salva lettura',
+        onConfirm: (d) => {
+          Store.addReading({
+            date: U.todayISO(), source: 'manual',
+            temp: U.num(d.temp), rh: U.num(d.rh), vpd: U.num(d.vpd),
+            ph: U.num(d.ph), ec: U.num(d.ec), ppfd: U.num(d.ppfd),
+            co2: U.num(d.co2), waterTemp: U.num(d.waterTemp)
+          });
+          this.render(); U.toast('📈 Lettura salvata');
+        }
+      });
+    },
+
+    /* ================= CALCOLATORI ================= */
+    runCalc() {
+      const n = (id) => { const el = document.getElementById(id); return el ? U.num(el.value) : null; };
+      const t = n('calc-vpd-t'), rh = n('calc-vpd-rh'), off = n('calc-vpd-off');
+      const outV = U.$('#out-vpd'), outVh = U.$('#out-vpd-hint');
+      if (outV) {
+        if (t != null && rh != null) {
+          const v = U.vpd(t, rh, (off == null ? 2 : off));
+          outV.textContent = U.fmt(v, 2) + ' kPa';
+          const tg = this.target();
+          if (tg.vpd) outVh.textContent = (v < tg.vpd[0]) ? 'Sotto il target: UR troppo alta / aria ferma.'
+            : (v > tg.vpd[1]) ? 'Sopra il target: aria troppo secca.' : `In target (${tg.vpd[0]}–${tg.vpd[1]} kPa).`;
+        } else { outV.textContent = '—'; outVh.textContent = ''; }
+      }
+      const p = n('calc-dli-p'), h = n('calc-dli-h');
+      const outD = U.$('#out-dli'), outDh = U.$('#out-dli-hint');
+      if (outD) {
+        if (p != null && h != null) {
+          const dli = U.dli(p, h);
+          outD.textContent = U.fmt(dli, 1) + ' mol/m²/d';
+          const tg = this.target();
+          outDh.textContent = (dli < tg.dli[0]) ? 'Sotto il target: luce insufficiente.'
+            : (dli > tg.dli[1]) ? 'Sopra il target: attenzione a stress/bleaching.' : `In target (${tg.dli[0]}–${tg.dli[1]} mol).`;
+        } else { outD.textContent = '—'; outDh.textContent = ''; }
+      }
+      const cur = n('calc-dil-cur'), tgt = n('calc-dil-tgt'), vol = n('calc-dil-vol');
+      const outDil = U.$('#out-dil');
+      if (outDil) {
+        if (cur != null && tgt != null && vol != null && cur > 0 && tgt > 0) {
+          if (cur <= tgt) outDil.innerHTML = 'La soluzione è già alla concentrazione desiderata (o più bassa): aggiungi nutrienti, non acqua.';
+          else {
+            const waterToAdd = vol * (cur / tgt - 1);
+            outDil.innerHTML = `Aggiungi <b class="mono">${U.fmt(waterToAdd, 1)} L</b> di acqua a pH corretto per portare ${U.fmt(vol, 1)} L da EC ${U.fmt(cur, 2)} a EC ${U.fmt(tgt, 2)}.`;
+          }
+        } else outDil.textContent = '—';
+      }
+    }
+  };
+
+  // EC ⇄ PPM input bidirezionale (usa il punto decimale: NumStr)
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'calc-ec') { const p = document.getElementById('calc-ppm'); if (p) p.value = U.numStr(U.num(e.target.value) * 500, 0); }
+    if (e.target.id === 'calc-ppm') { const c = document.getElementById('calc-ec'); if (c) c.value = U.numStr(U.num(e.target.value) / 500, 2); }
+  });
+
+  global.App = App;
+
+  // Boot
+  document.addEventListener('DOMContentLoaded', () => {
+    window.Maria = App;
+    App.init();
+  });
+})(window);
