@@ -1,7 +1,7 @@
 {
-  "name": "Maria — Diario Coltivazione Indoor",
-  "short_name": "Maria",
-  "description": "Diario personale e pannello di controllo per la coltivazione indoor di cannabis: interventi, parametri ambientali in tempo reale, consigli tecnici e alert.",
+  "name": "GROW FAST & GROW BIG !!",
+  "short_name": "Grow Fast",
+  "description": "Grow Fast & Grow Big — diario e pannello di controllo per la coltivazione indoor: interventi al volo, parametri in tempo reale, consumi e costi, consigli tecnici e alert.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
