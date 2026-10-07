@@ -1,5 +1,5 @@
 /* Maria — Service Worker (offline-first, app-shell caching) */
-const CACHE = 'maria-v1';
+const CACHE = 'maria-v2';
 const ASSETS = [
   './',
   './index.html',

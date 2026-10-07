@@ -94,6 +94,42 @@
       return tips[grow.stage] || tips.vegetativa;
     },
 
+    LAMP_TYPES: ['MH', 'HPS', 'MH + HPS', 'LED', 'CMH / LEC', 'CFL', 'Altro'],
+
+    // Potenza indicativa consigliata (W per m²) e consiglio sull'area/piante
+    lightAdvice(grow) {
+      if (!grow || !grow.areaW || !grow.areaD) return null;
+      const areaM2 = (grow.areaW / 100) * (grow.areaD / 100);
+      const perM2 = { 'MH': 55, 'HPS': 65, 'MH + HPS': 60, 'LED': 40, 'CMH / LEC': 50, 'CFL': 20, 'Altro': 40 };
+      const base = perM2[grow.lampType] || 40;
+      const loW = Math.round(areaM2 * base * 0.8);
+      const hiW = Math.round(areaM2 * base * 1.25);
+      const plants = grow.plants || 1;
+      const areaPerPlant = areaM2 / plants;
+      const out = {
+        areaM2: U.round(areaM2, 2),
+        wPerM2: Math.round(base),
+        recommended: [loW, hiW],
+        plants,
+        areaPerPlant: U.round(areaPerPlant, 2)
+      };
+      // confronto con la potenza di fase dichiarata
+      const stage = grow.stage;
+      const curW = (stage === 'fioritura' || stage === 'flushing') ? grow.flowerWatts : grow.vegWatts;
+      if (curW) {
+        out.current = curW;
+        out.currentWPerM2 = Math.round(curW / areaM2);
+        out.status = curW < loW ? 'low' : curW > hiW ? 'high' : 'ok';
+      }
+      // densità piante (regola indicativa: 1 pianta ogni 0,25–0,5 m² in SOG)
+      out.plantHint = areaPerPlant < 0.15
+        ? 'Molte piante per l’area: valuta SOG o vaso più piccolo.'
+        : areaPerPlant > 0.6
+          ? 'Poche piante per l’area: puoi fare più vegetativa (SCROG/LST).'
+          : 'Densità piante equilibrata.';
+      return out;
+    },
+
     healthLabel(n) {
       return ['', 'Critica', 'Scarsa', 'Media', 'Buona', 'Ottima'][n] || '—';
     }

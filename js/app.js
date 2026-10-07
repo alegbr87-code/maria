@@ -30,6 +30,9 @@
   const App = {
     screen: 'home',
     ICONS,
+    diaryMode: 'list',   // 'list' | 'calendar'
+    calY: null,          // anno del calendario mostrato (null = mese corrente)
+    calM: null,          // mese del calendario (0-11)
 
     init() {
       Store.init();
@@ -51,6 +54,11 @@
 
     grow() { return Store.activeGrow(); },
     target() { const g = this.grow(); return Advice.targetFor(g ? g.stage : 'vegetativa'); },
+    wattsNow(g) {
+      g = g || this.grow();
+      if (!g) return null;
+      return (g.stage === 'fioritura' || g.stage === 'flushing') ? (g.flowerWatts || null) : (g.vegWatts || null);
+    },
 
     go(screen) { this.screen = screen; this.render(); window.scrollTo(0, 0); },
 
@@ -141,6 +149,11 @@
           <div class="flex between mt12">
             <span class="muted" style="font-size:12px">Inizio ${U.fmtDate(g.startDate, 'short')}</span>
             <span class="muted" style="font-size:12px">Settimana ${Advice.weekOf(g)}</span>
+          </div>
+          <div class="chip-group mt12" style="gap:6px">
+            ${(g.areaW && g.areaD) ? `<span class="pill blue">📐 ${g.areaW}×${g.areaD} cm</span>` : ''}
+            ${g.plants ? `<span class="pill green">🌿 ${g.plants} ${g.plants === 1 ? 'pianta' : 'piante'}</span>` : ''}
+            ${g.lampType ? `<span class="pill amber">💡 ${U.esc(g.lampType)}${this.wattsNow(g) ? ' ' + this.wattsNow(g) + 'W' : ''}</span>` : ''}
           </div>
         </div>
 
@@ -234,13 +247,14 @@
       timeline.sort((a, b) => b.ts.localeCompare(a.ts));
 
       const todayEntry = entries.find(e => e.date === U.todayISO());
+      const calendar = this.diaryMode === 'calendar';
 
       return `<div class="screen">
         <div class="card" style="display:flex;gap:12px;align-items:center">
           <div style="font-size:28px">${todayEntry ? '✅' : '📝'}</div>
           <div class="grow">
             <div style="font-weight:700">${todayEntry ? 'Nota di oggi registrata' : 'Non hai ancora scritto la nota di oggi'}</div>
-            <div class="muted" style="font-size:12.5px">${timeline.length} voci nella timeline</div>
+            <div class="muted" style="font-size:12.5px">${entries.length} note · ${interventions.length} interventi</div>
           </div>
           <button class="btn primary sm" data-action="add-entry">+ Nota</button>
         </div>
@@ -251,9 +265,16 @@
           <button class="btn sm" data-action="go" data-screen="tools">🧮 Strumenti</button>
         </div>
 
-        <div class="section-title">Timeline</div>
-        ${timeline.length ? timeline.map(it => it.kind === 'entry' ? this.entryCard(it.data) : this.intCard(it.data)).join('')
-          : `<div class="empty"><div class="big">📖</div><p>Il diario è vuoto. Inizia ad annotare la tua giornata!</p></div>`}
+        <div class="seg mt16">
+          <button class="${!calendar ? 'active' : ''}" data-action="diary-mode" data-mode="list">📋 Elenco</button>
+          <button class="${calendar ? 'active' : ''}" data-action="diary-mode" data-mode="calendar">🗓️ Calendario</button>
+        </div>
+
+        ${calendar
+          ? this.calendarHTML(g)
+          : `<div class="section-title">Timeline</div>
+             ${timeline.length ? timeline.map(it => it.kind === 'entry' ? this.entryCard(it.data) : this.intCard(it.data)).join('')
+               : `<div class="empty"><div class="big">📖</div><p>Il diario è vuoto. Inizia ad annotare la tua giornata!</p></div>`}`}
       </div>`;
     },
 
@@ -303,6 +324,94 @@
           </div>
         </div>
       </div>`;
+    },
+
+    /* ================= CALENDARIO ================= */
+    colorFor(stageId) {
+      const map = { germinazione: '#b48bff', piantina: '#4aa8ff', vegetativa: '#37d67a', fioritura: '#a8e05f', flushing: '#4aa8ff', raccolta: '#ffb020', essiccazione: '#ffb020', concia: '#b48bff' };
+      return map[stageId] || '#37d67a';
+    },
+
+    shiftMonth(delta) {
+      const now = new Date();
+      const y = this.calY != null ? this.calY : now.getFullYear();
+      const m = this.calM != null ? this.calM : now.getMonth();
+      const d = new Date(y, m + delta, 1);
+      this.calY = d.getFullYear();
+      this.calM = d.getMonth();
+      this.render();
+    },
+
+    calendarHTML(g) {
+      const now = new Date();
+      const y = this.calY != null ? this.calY : now.getFullYear();
+      const m = this.calM != null ? this.calM : now.getMonth();
+      const first = new Date(y, m, 1);
+      const daysInMonth = new Date(y, m + 1, 0).getDate();
+      const offset = (first.getDay() + 6) % 7; // lunedì = 0
+      const monthName = first.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+
+      const notesBy = {}, intsBy = {}, readsBy = {};
+      Store.entriesFor(g.id).forEach(e => { notesBy[e.date] = (notesBy[e.date] || 0) + 1; });
+      Store.interventionsFor(g.id).forEach(i => { intsBy[i.date] = (intsBy[i.date] || 0) + 1; });
+      Store.readingsFor(g.id).forEach(r => { const d = r.date || (r.ts || '').slice(0, 10); readsBy[d] = (readsBy[d] || 0) + 1; });
+
+      const wd = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'].map(d => `<div class="cal-wd">${d}</div>`).join('');
+
+      let cells = '';
+      for (let i = 0; i < offset; i++) cells += `<div class="cal-day empty"></div>`;
+      for (let day = 1; day <= daysInMonth; day++) {
+        const iso = U.dateToISO(new Date(y, m, day));
+        const stage = Store.stageForDate(g, iso);
+        const isToday = iso === U.todayISO();
+        const color = this.colorFor(stage);
+        const dots = (notesBy[iso] ? `<i class="d-note"></i>` : '') +
+                     (intsBy[iso] ? `<i class="d-int"></i>` : '') +
+                     (readsBy[iso] ? `<i class="d-read"></i>` : '');
+        const style = stage ? `style="background:${color}22;border-color:${color}66"` : '';
+        const cls = `cal-day${stage ? '' : ' out'}${isToday ? ' today' : ''}`;
+        cells += `<button class="${cls}" ${style} data-action="cal-day" data-date="${iso}">${day}${dots ? `<span class="dots">${dots}</span>` : ''}</button>`;
+      }
+
+      const usedStages = [...new Set(((g.stageLog && g.stageLog.length) ? g.stageLog : [{ stage: g.stage }]).map(s => s.stage))];
+      const legend = usedStages.map(sid => {
+        const st = Store.STAGES.find(x => x.id === sid) || {};
+        return `<span><i style="background:${this.colorFor(sid)}"></i>${U.esc(st.label || sid)}</span>`;
+      }).join('') +
+        `<span><i class="d-note" style="border-radius:50%"></i>Nota</span>` +
+        `<span><i class="d-int" style="border-radius:50%"></i>Intervento</span>` +
+        `<span><i class="d-read" style="border-radius:50%"></i>Parametro</span>`;
+
+      return `<div class="cal-head">
+          <button class="icon-btn" data-action="cal-prev">‹</button>
+          <div class="cal-month">${U.esc(monthName)}</div>
+          <div class="cal-nav">
+            <button class="btn sm ghost" data-action="cal-today" style="padding:6px 10px">Oggi</button>
+            <button class="icon-btn" data-action="cal-next">›</button>
+          </div>
+        </div>
+        <div class="cal-grid">${wd}${cells}</div>
+        <div class="cal-legend">${legend}</div>
+        <div class="hint mt8">Tocca un giorno per vedere note e interventi di quella data.</div>`;
+    },
+
+    dayDetail(iso) {
+      const g = this.grow();
+      if (!g) return;
+      const entries = Store.entriesFor(g.id).filter(e => e.date === iso);
+      const ints = Store.interventionsFor(g.id).filter(i => i.date === iso);
+      const stage = Store.stageForDate(g, iso);
+      const st = Store.STAGES.find(s => s.id === stage);
+      const body = `
+        <div class="muted mb12">${U.esc(st ? st.label : 'Prima dell’inizio')} · giorno ${U.dayNumber(g.startDate, iso)}</div>
+        ${entries.map(e => this.entryCard(e)).join('')}
+        ${ints.map(i => this.intCard(i)).join('')}
+        ${(!entries.length && !ints.length) ? '<div class="empty" style="padding:20px">Nessuna nota né intervento in questa data.</div>' : ''}
+        <div class="row-btns mt16">
+          <button class="btn sm primary" data-action="day-add-note" data-date="${iso}">📝 Nota</button>
+          <button class="btn sm" data-action="day-add-int" data-date="${iso}">🔧 Intervento</button>
+        </div>`;
+      this.openModal(U.fmtDate(iso), body, { confirmLabel: 'Chiudi', onConfirm: () => {} });
     },
 
     /* ================= LIVE ================= */
@@ -559,6 +668,7 @@
       const g = this.grow();
       const rem = Store.state.settings.remote;
       const stages = Store.STAGES;
+      const la = Advice.lightAdvice(g);
 
       return `<div class="screen">
         <div class="section-title">Coltivazioni</div>
@@ -579,6 +689,19 @@
           <button class="btn primary sm" data-action="new-grow">+ Nuova</button>
           ${Store.state.grows.length > 1 ? `<button class="btn sm" data-action="switch-grow">🔄 Cambia attiva</button>` : ''}
           ${g ? `<button class="btn sm danger" data-action="del-grow">🗑️ Elimina attiva</button>` : ''}
+        </div>
+
+        <div class="section-title">Ambiente & Luce</div>
+        <div class="card">
+          ${g ? `
+          <div class="flex between" style="padding:6px 0"><span class="muted">Area di coltivazione</span><b class="mono">${(g.areaW && g.areaD) ? `${g.areaW}×${g.areaD} cm · ${U.fmt(g.areaW * g.areaD / 10000, 2)} m²` : '—'}</b></div>
+          <div class="flex between" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">Numero di piante</span><b class="mono">${g.plants || '—'}</b></div>
+          <div class="flex between" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">Tipo lampada</span><b>${U.esc(g.lampType || '—')}</b></div>
+          <div class="flex between" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">Watt (veg / fioritura)</span><b class="mono">${g.vegWatts || '—'} / ${g.flowerWatts || '—'} W</b></div>
+          ${g.light ? `<div class="flex between" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">Note</span><span class="muted" style="text-align:right;max-width:60%">${U.esc(g.light)}</span></div>` : ''}
+          <div class="row-btns mt12"><button class="btn sm" data-action="edit-grow">✏️ Modifica ambiente & luce</button></div>
+          ${la ? `<div class="hint mt8">💡 Per ${U.fmt(la.areaM2, 2)} m² con ${U.esc(g.lampType || 'lampada')} la potenza indicativa è <b>${la.recommended[0]}–${la.recommended[1]} W</b> (~${la.wPerM2} W/m²).${la.current ? ` In ${g.stage} stai usando ${la.current} W (${la.currentWPerM2} W/m²) → ${la.status === 'ok' ? 'in target ✅' : la.status === 'low' ? 'un po’ bassa' : 'alta'}.</b>` : ''}<br>${la.plantHint}</div>` : `<div class="hint mt8">Inserisci larghezza e profondità dell'area per ricevere il consiglio sulla potenza della lampada.</div>`}
+          ` : `<div class="muted center">Nessuna coltivazione attiva.</div>`}
         </div>
 
         <div class="section-title">Preferenze</div>
@@ -691,6 +814,13 @@
         case 'add-intervention': this.interventionForm(null, 'irrigazione'); break;
         case 'edit-intervention': this.interventionForm(Store.state.interventions.find(x => x.id === el.dataset.id)); break;
         case 'del-intervention': this.confirm('Elimina intervento', 'Vuoi eliminare questo intervento?', () => { Store.removeIntervention(el.dataset.id); this.render(); }); break;
+        case 'diary-mode': this.diaryMode = el.dataset.mode; this.render(); break;
+        case 'cal-prev': this.shiftMonth(-1); break;
+        case 'cal-next': this.shiftMonth(1); break;
+        case 'cal-today': this.calY = null; this.calM = null; this.render(); break;
+        case 'cal-day': this.dayDetail(el.dataset.date); break;
+        case 'day-add-note': this.entryForm(null, false, el.dataset.date); break;
+        case 'day-add-int': this.interventionForm(null, 'irrigazione', el.dataset.date); break;
         case 'quick': this.quickAction(el.dataset.kind); break;
         case 'quick-reading': this.readingForm(false); break;
         case 'save-reading': if (Live.value) { Live.saveCurrent(); this.render(); } else { this.readingForm(false); } break;
@@ -806,7 +936,21 @@
           <div class="field"><label>Substrato</label><input class="input" data-field="medium" value="${U.esc(g.medium || 'Terra')}" placeholder="Terra / Coco / Idroponica"></div>
           <div class="field"><label>Vaso</label><input class="input" data-field="potSize" value="${U.esc(g.potSize || '')}" placeholder="es. 11 L"></div>
         </div>
-        <div class="field"><label>Luce / lampada</label><input class="input" data-field="light" value="${U.esc(g.light || '')}" placeholder="es. LED 240W"></div>
+        <div class="section-title" style="margin:14px 4px 8px">Area di coltivazione</div>
+        <div class="field-row">
+          <div class="field"><label>Larghezza (cm)</label><input class="input" type="number" inputmode="numeric" data-field="areaW" value="${U.numStr(g.areaW)}" placeholder="es. 100"></div>
+          <div class="field"><label>Profondità (cm)</label><input class="input" type="number" inputmode="numeric" data-field="areaD" value="${U.numStr(g.areaD)}" placeholder="es. 50"></div>
+        </div>
+        <div class="field"><label>Numero di piante</label><input class="input" type="number" inputmode="numeric" data-field="plants" value="${U.numStr(g.plants != null ? g.plants : 1)}"></div>
+        <div class="section-title" style="margin:14px 4px 8px">Illuminazione</div>
+        <div class="field"><label>Tipo di lampada</label>
+          <select class="select" data-field="lampType">${Advice.LAMP_TYPES.map(t => `<option value="${U.esc(t)}" ${g.lampType === t ? 'selected' : ''}>${U.esc(t)}</option>`).join('')}</select>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Watt in vegetativa</label><input class="input" type="number" inputmode="numeric" data-field="vegWatts" value="${U.numStr(g.vegWatts)}" placeholder="es. 250"></div>
+          <div class="field"><label>Watt in fioritura</label><input class="input" type="number" inputmode="numeric" data-field="flowerWatts" value="${U.numStr(g.flowerWatts)}" placeholder="es. 400"></div>
+        </div>
+        <div class="field"><label>Note lampada (opz.)</label><input class="input" data-field="light" value="${U.esc(g.light || '')}" placeholder="es. 2 bulbi, cooltube, dimmer"></div>
         <div class="field-row">
           <div class="field"><label>Ore luce vegetativa</label><input class="input" type="number" data-field="vegHours" value="${g.schedule ? g.schedule.vegHours : 18}"></div>
           <div class="field"><label>Ore luce fioritura</label><input class="input" type="number" data-field="flowerHours" value="${g.schedule ? g.schedule.flowerHours : 12}"></div>
@@ -816,7 +960,10 @@
         onConfirm: (d) => {
           const patch = {
             name: d.name, strain: d.strain, genetics: d.genetics, startDate: d.startDate,
-            stage: d.stage, medium: d.medium, potSize: d.potSize, light: d.light,
+            stage: d.stage, medium: d.medium, potSize: d.potSize,
+            areaW: U.num(d.areaW), areaD: U.num(d.areaD), plants: U.num(d.plants) || 1,
+            lampType: d.lampType, vegWatts: U.num(d.vegWatts), flowerWatts: U.num(d.flowerWatts),
+            light: d.light,
             schedule: { vegHours: U.num(d.vegHours) || 18, flowerHours: U.num(d.flowerHours) || 12 }
           };
           if (isNew) { Store.addGrow(patch); U.toast('🌱 Coltivazione creata'); }
@@ -827,9 +974,10 @@
     },
 
     /* ================= FORM: NOTA ================= */
-    entryForm(entry, isObs) {
+    entryForm(entry, isObs, presetDate) {
       if (!entry && !this.grow()) { U.toast('Crea prima una coltivazione'); return; }
       const e = entry || {};
+      if (!e.date) e.date = presetDate || null;
       const placeholder = isObs
         ? 'Osservazione: colore foglie, segni di carenza/eccessi, parassiti, odore, crescita, tricomi…'
         : 'Cosa è successo oggi? Come sta la pianta? Note, sensazioni, osservazioni…';
@@ -893,9 +1041,10 @@
     },
 
     /* ================= FORM: INTERVENTO ================= */
-    interventionForm(it, presetType) {
+    interventionForm(it, presetType, presetDate) {
       if (!it && !this.grow()) { U.toast('Crea prima una coltivazione'); return; }
       const e = it || {};
+      if (!e.date) e.date = presetDate || null;
       const typeId = e.type || presetType || 'irrigazione';
       const body = `
         <div class="field"><label>Tipo intervento</label>

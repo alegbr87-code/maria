@@ -309,5 +309,29 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 24p
 .spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--line-solid); border-top-color: var(--green); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---------- Segmented control ---------- */
+.seg { display: flex; background: var(--surface-2); border-radius: 12px; padding: 4px; gap: 4px; }
+.seg button { flex: 1; padding: 9px 8px; border-radius: 9px; font-weight: 700; font-size: 13px; color: var(--text-dim); }
+.seg button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+/* ---------- Calendario ---------- */
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 10px; }
+.cal-head .cal-month { font-weight: 800; font-size: 16px; text-transform: capitalize; }
+.cal-head .cal-nav { display: flex; gap: 8px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-wd { text-align: center; font-size: 10px; color: var(--text-mute); font-weight: 700; text-transform: uppercase; padding: 4px 0; }
+.cal-day { position: relative; aspect-ratio: 1; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line); color: var(--text); font-size: 12px; font-weight: 700; display: flex; align-items: flex-start; justify-content: center; padding-top: 6px; overflow: hidden; }
+.cal-day.empty { background: transparent; border: none; }
+.cal-day.out { opacity: .35; }
+.cal-day.today { outline: 2px solid var(--green); outline-offset: -1px; }
+.cal-day .dots { position: absolute; bottom: 5px; left: 0; right: 0; display: flex; gap: 3px; justify-content: center; }
+.cal-day .dots i { width: 5px; height: 5px; border-radius: 50%; display: block; }
+.cal-day .dots i.d-note { background: var(--green); }
+.cal-day .dots i.d-int { background: var(--amber); }
+.cal-day .dots i.d-read { background: var(--blue); }
+.cal-legend { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 12px; font-size: 11px; color: var(--text-dim); }
+.cal-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.cal-legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
 .alert-item.critical{ background: rgba(255,90,95,.10); border-color: rgba(255,90,95,.38); }
 

@@ -72,6 +72,13 @@
       ['grows', 'entries', 'interventions', 'readings'].forEach(k => {
         if (!Array.isArray(this.state[k])) this.state[k] = [];
       });
+      // migrazione: garantisce stageLog e campi ambiente su grow esistenti
+      this.state.grows.forEach(g => {
+        if (!Array.isArray(g.stageLog) || !g.stageLog.length) {
+          g.stageLog = [{ stage: g.stage, date: g.startDate }];
+        }
+        if (g.plants == null) g.plants = 1;
+      });
       return this.state;
     },
 
@@ -99,12 +106,24 @@
         stage: 'germinazione',
         medium: 'Terra',
         potSize: '',
-        light: '',
+        // ambiente
+        areaW: null,   // larghezza area (cm)
+        areaD: null,   // profondità/altezza area (cm)
+        plants: 1,     // numero di piante
+        // illuminazione
+        lampType: 'LED',   // MH · HPS · MH+HPS · LED · CMH/LEC · CFL · Altro
+        vegWatts: null,    // W in vegetativa
+        flowerWatts: null, // W in fioritura
+        light: '',         // note libere sulla lampada
         schedule: { vegHours: 18, flowerHours: 12 },
+        stageLog: [],
         archived: false,
         createdAt: new Date().toISOString()
       }, data || {});
       g.schedule = Object.assign({ vegHours: 18, flowerHours: 12 }, g.schedule || {});
+      g.stageLog = Array.isArray(g.stageLog) && g.stageLog.length
+        ? g.stageLog
+        : [{ stage: g.stage, date: g.startDate }];
       this.state.grows.push(g);
       this.state.activeGrowId = g.id;
       this.save();
@@ -129,7 +148,28 @@
     },
 
     setStage(growId, stage) {
-      return this.updateGrow(growId, { stage });
+      const g = this.state.grows.find(x => x.id === growId);
+      if (!g) return null;
+      if (g.stage !== stage) {
+        g.stageLog = Array.isArray(g.stageLog) && g.stageLog.length
+          ? g.stageLog
+          : [{ stage: g.stage, date: g.startDate }];
+        g.stageLog.push({ stage, date: U.todayISO() });
+      }
+      g.stage = stage;
+      this.save();
+      return g;
+    },
+
+    // Stadio attivo in una certa data (per il calendario)
+    stageForDate(grow, iso) {
+      if (!grow) return null;
+      const log = (Array.isArray(grow.stageLog) && grow.stageLog.length)
+        ? grow.stageLog.slice().sort((a, b) => a.date.localeCompare(b.date))
+        : [{ stage: grow.stage, date: grow.startDate }];
+      let cur = null;
+      for (const e of log) { if (U.daysBetween(e.date, iso) >= 0) cur = e.stage; }
+      return cur; // null = prima dell'inizio
     },
 
     /* ---- DIARY ENTRIES ---- */
@@ -291,8 +331,15 @@
         stage: 'vegetativa',
         medium: 'Terra (Light Mix) + Perlite',
         potSize: '11 L',
-        light: 'LED Quantum Board 240W',
-        schedule: { vegHours: 18, flowerHours: 12 }
+        areaW: 80, areaD: 80, plants: 2,
+        lampType: 'LED', vegWatts: 120, flowerWatts: 240,
+        light: 'LED Quantum Board 240W dimmerabile',
+        schedule: { vegHours: 18, flowerHours: 12 },
+        stageLog: [
+          { stage: 'germinazione', date: U.addDays(U.todayISO(), -28) },
+          { stage: 'piantina', date: U.addDays(U.todayISO(), -24) },
+          { stage: 'vegetativa', date: U.addDays(U.todayISO(), -18) }
+        ]
       });
       const base = U.addDays(U.todayISO(), -6);
       for (let i = 0; i < 6; i++) {
