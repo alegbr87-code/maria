@@ -81,6 +81,8 @@
         }
         if (g.plants == null) g.plants = 1;
         if (!Array.isArray(g.expenses)) g.expenses = [];
+        if (!g.light || typeof g.light !== 'object') g.light = { on: false, since: null, log: [] };
+        if (!Array.isArray(g.light.log)) g.light.log = [];
       });
       return this.state;
     },
@@ -121,6 +123,7 @@
         schedule: { vegHours: 18, flowerHours: 12 },
         stageLog: [],
         expenses: [],      // spese extra: { id, date, label, amount }
+        light: { on: false, since: null, log: [] }, // registro accensione luce: {start,end,watts}
         archived: false,
         createdAt: new Date().toISOString()
       }, data || {});
@@ -183,7 +186,47 @@
       this.save();
     },
 
-    // Consumi e costi stimati: kWh luce (da watt x ore/phase x giorni), litri acqua, spese extra
+    /* ---- LUCE: watt di fase + accensione/spegnimento con conteggio ore ---- */
+    activeWatts(grow) {
+      grow = grow || this.activeGrow();
+      if (!grow) return 0;
+      return (grow.stage === 'fioritura' || grow.stage === 'flushing') ? (grow.flowerWatts || 0) : (grow.vegWatts || 0);
+    },
+
+    lightToggle() {
+      const g = this.activeGrow();
+      if (!g) return null;
+      if (!g.light || typeof g.light !== 'object') g.light = { on: false, since: null, log: [] };
+      if (!Array.isArray(g.light.log)) g.light.log = [];
+      const now = new Date().toISOString();
+      if (g.light.on) {
+        const open = g.light.log.filter(s => !s.end).pop();
+        if (open) open.end = now;
+        g.light.on = false; g.light.since = null;
+      } else {
+        g.light.log.push({ start: now, end: null, watts: this.activeWatts(g) || 0 });
+        g.light.on = true; g.light.since = now;
+      }
+      this.save();
+      return g.light.on;
+    },
+
+    lightStats(grow) {
+      grow = grow || this.activeGrow();
+      if (!grow || !grow.light || !Array.isArray(grow.light.log)) return { hours: 0, kWh: 0, on: false };
+      const now = Date.now();
+      let hours = 0, kwh = 0;
+      grow.light.log.forEach(s => {
+        const start = Date.parse(s.start);
+        const end = s.end ? Date.parse(s.end) : now;
+        const dur = Math.max(0, end - start) / 3600000; // ore
+        hours += dur;
+        kwh += (s.watts || 0) / 1000 * dur;
+      });
+      return { hours: U.round(hours, 1), kWh: U.round(kwh, 2), on: !!grow.light.on };
+    },
+
+    // Consumi e costi: ore luce (misurate dal pulsante, altrimenti stimate), litri acqua, spese extra
     consumption(grow) {
       grow = grow || this.activeGrow();
       if (!grow) return null;
@@ -193,11 +236,11 @@
       const lightStages = ['germinazione', 'piantina', 'vegetativa', 'fioritura', 'flushing'];
       const flowerStages = ['fioritura', 'flushing'];
 
+      // stima da stadi (fallback se non ci sono accensioni registrate)
       const log = (Array.isArray(grow.stageLog) && grow.stageLog.length)
         ? grow.stageLog.slice().sort((a, b) => a.date.localeCompare(b.date))
         : [{ stage: grow.stage, date: grow.startDate }];
-
-      let kWh = 0;
+      let estKWh = 0, estHours = 0;
       for (let i = 0; i < log.length; i++) {
         const stage = log[i].stage;
         if (!lightStages.includes(stage)) continue;
@@ -207,8 +250,14 @@
         if (days <= 0) continue;
         const t = Advice ? Advice.targetFor(stage) : { lightHours: flowerStages.includes(stage) ? 12 : 18 };
         const watts = flowerStages.includes(stage) ? (grow.flowerWatts || 0) : (grow.vegWatts || 0);
-        kWh += (watts / 1000) * (t.lightHours || 0) * days;
+        estKWh += (watts / 1000) * (t.lightHours || 0) * days;
+        estHours += (t.lightHours || 0) * days;
       }
+
+      const ls = this.lightStats(grow);
+      const measured = ls.hours > 0;
+      const kWh = measured ? ls.kWh : U.round(estKWh, 2);
+      const lightHours = measured ? ls.hours : U.round(estHours, 0);
 
       let liters = 0;
       this.interventionsFor(grow.id).forEach(i => {
@@ -226,6 +275,9 @@
       const extraCost = U.round((grow.expenses || []).reduce((a, e) => a + (U.num(e.amount) || 0), 0), 2);
       return {
         kWh: U.round(kWh, 1),
+        lightHours: U.round(lightHours, 1),
+        lightMeasured: measured,
+        lightOn: ls.on,
         liters: U.round(liters, 1),
         energyCost, waterCost, extraCost,
         total: U.round(energyCost + waterCost + extraCost, 2)
@@ -439,6 +491,14 @@
         { id: U.uid('exp'), date: U.addDays(U.todayISO(), -14), label: 'Fertilizzanti BioBizz', amount: 18.5 },
         { id: U.uid('exp'), date: U.addDays(U.todayISO(), -10), label: 'Terriccio + perlite', amount: 12 }
       ];
+      const nowMs = Date.now();
+      g.light = {
+        on: false, since: null,
+        log: [
+          { start: new Date(nowMs - 20 * 3600000).toISOString(), end: new Date(nowMs - 14 * 3600000).toISOString(), watts: 120 },
+          { start: new Date(nowMs - 6 * 3600000).toISOString(), end: new Date(nowMs - 1 * 3600000).toISOString(), watts: 120 }
+        ]
+      };
       this.save();
       return g;
     }

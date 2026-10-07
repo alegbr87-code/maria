@@ -44,6 +44,9 @@
       this.bindEvents();
       this.render();
 
+      // aggiorna il cronometro della luce ogni minuto
+      try { setInterval(() => { if (this.screen === 'home') this.updateLightClock(); }, 60000); } catch (e) {}
+
       // registra il service worker
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./service-worker.js').catch(() => {});
@@ -108,6 +111,7 @@
       el.innerHTML = this.headerHTML(g) + `<main id="screen">${this.screenHTML()}</main>` + this.tabbarHTML() + `<div class="toast-wrap"></div>`;
       if (this.screen === 'live') this.refreshLiveDom();
       if (this.screen === 'tools') this.runCalc();
+      if (this.screen === 'home') this.updateLightClock();
     },
 
     screenHTML() {
@@ -155,11 +159,13 @@
     emptyGrow() {
       return `<div class="screen"><div class="empty">
         <div class="big">🌱</div>
-        <p>Nessuna coltivazione presente.<br>Crea la tua prima coltivazione per iniziare a tener traccia di giornate, interventi e parametri.</p>
+        <p>Nessuna coltivazione presente.<br>Crea la tua prima coltivazione, <b>importa un backup</b> per ripartire da dove eri, o carica la demo.</p>
         <div class="row-btns" style="justify-content:center;margin-top:14px">
           <button class="btn primary" data-action="new-grow">+ Nuova coltivazione</button>
-          <button class="btn" data-action="demo">Carica demo</button>
+          <button class="btn" data-action="import">⬆️ Importa backup</button>
+          <button class="btn" data-action="demo">🎬 Carica demo</button>
         </div>
+        <p class="mute2" style="font-size:12px;margin-top:12px">Hai già un file di backup (growfast-backup-*.json)? Importalo e ritrovi diario, interventi, parametri, spese e tariffe.</p>
       </div></div>`;
     },
 
@@ -240,6 +246,13 @@
             <div class="field"><label>N° piante</label><input class="input" type="number" inputmode="numeric" data-action="grow-field" data-field="plants" value="${U.numStr(g.plants != null ? g.plants : 1)}"></div>
             <div class="field"><label>Varietà</label><input class="input" data-action="grow-field" data-field="strain" value="${U.esc(g.strain || '')}" placeholder="es. Northern Lights"></div>
           </div>
+          <div class="toggle-row" style="margin-top:6px;padding-top:12px">
+            <div>
+              <div class="t-title">${cons.lightOn ? '💡 Luce ACCESA' : '🌑 Luce spenta'}</div>
+              <div class="t-sub" id="light-elapsed">—</div>
+            </div>
+            <button class="btn ${cons.lightOn ? 'danger' : 'primary'} sm" data-action="light-toggle">${cons.lightOn ? '⏻ Spegni' : '⏻ Accendi'}</button>
+          </div>
           ${la ? `<div class="hint mt8">💡 Consiglio potenza: per ${U.fmt(la.areaM2, 2)} m² con ${U.esc(g.lampType)} → <b>${la.recommended[0]}–${la.recommended[1]} W</b>${la.current ? ` (ora ${la.current} W · ${la.currentWPerM2} W/m² → ${la.status === 'ok' ? 'ok ✅' : la.status === 'low' ? 'un po’ bassa' : 'alta'})` : ''}.</div>` : ''}
         </div>
 
@@ -252,7 +265,7 @@
         <div class="section-title">Consumi & Costi</div>
         <div class="card">
           <div class="cons">
-            <div class="box"><div class="l">Luce</div><div class="v mono">${cons.kWh}<span class="unit">kWh</span></div><div class="l" style="margin-top:5px;text-transform:none">≈ ${U.fmt(cons.energyCost, 2)} €</div></div>
+            <div class="box"><div class="l">Luce · ${U.fmt(cons.lightHours, 0)} h</div><div class="v mono">${cons.kWh}<span class="unit">kWh</span></div><div class="l" style="margin-top:5px;text-transform:none">≈ ${U.fmt(cons.energyCost, 2)} €${cons.lightMeasured ? '' : ' · stima'}</div></div>
             <div class="box"><div class="l">Acqua</div><div class="v mono">${cons.liters}<span class="unit">L</span></div><div class="l" style="margin-top:5px;text-transform:none">≈ ${U.fmt(cons.waterCost, 2)} €</div></div>
             <div class="box span2"><div class="l">Costo totale stimato</div><div class="v mono">${U.fmt(cons.total, 2)}<span class="unit">€</span></div><div class="l" style="margin-top:5px;text-transform:none">energia ${U.fmt(cons.energyCost, 2)} € · acqua ${U.fmt(cons.waterCost, 2)} € · spese ${U.fmt(cons.extraCost, 2)} €</div></div>
           </div>
@@ -263,6 +276,7 @@
           ${(g.expenses || []).length ? `<div class="mt12">${g.expenses.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(e => `<div class="exp-row"><div class="lab"><div>${U.esc(e.label)}</div><div class="d">${U.fmtDate(e.date, 'short')}</div></div><span class="amt mono">${U.fmt(e.amount, 2)} €</span><button class="btn sm ghost" data-action="del-expense" data-id="${e.id}" style="color:var(--red)">🗑️</button></div>`).join('')}</div>` : ''}
           <div class="row-btns mt12">
             <button class="btn sm primary" data-action="add-expense">＋ Aggiungi spesa</button>
+            <button class="btn sm" data-action="report">📄 Scarica report</button>
           </div>
         </div>
 
@@ -901,6 +915,8 @@
         case 'reset': this.confirm('Azzerare tutto?', 'Tutti i dati verranno cancellati definitivamente.', () => { Store.reset(); this.go('home'); U.toast('Dati azzerati'); }); break;
         case 'add-expense': this.addExpenseForm(); break;
         case 'del-expense': Store.removeExpense(el.dataset.id); this.render(); U.toast('Spesa eliminata'); break;
+        case 'light-toggle': { const on = Store.lightToggle(); this.render(); U.toast(on ? '💡 Luce ACCESA — conteggio ore avviato' : '🌑 Luce spenta'); break; }
+        case 'report': this.report(); break;
         case 'add-entry': this.entryForm(); break;
         case 'edit-entry': this.entryForm(Store.state.entries.find(x => x.id === el.dataset.id)); break;
         case 'del-entry': this.confirm('Elimina nota', 'Vuoi eliminare questa nota giornaliera?', () => { Store.removeEntry(el.dataset.id); this.render(); }); break;
@@ -992,7 +1008,7 @@
       const blob = new Blob([Store.exportJSON()], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'maria-backup-' + U.todayISO() + '.json';
+      a.download = 'growfast-backup-' + U.todayISO() + '.json';
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
       U.toast('⬇️ Backup esportato');
@@ -1319,6 +1335,88 @@
           this.render(); U.toast('🧪 Nutrizione registrata');
         }
       });
+    },
+
+    /* ================= CRONOMETRO LUCE + REPORT ================= */
+    updateLightClock() {
+      const el = U.$('#light-elapsed');
+      const g = this.grow();
+      if (!g || !g.light) { if (el) el.textContent = '—'; return; }
+      const ls = Store.lightStats(g);
+      let txt;
+      if (g.light.on && g.light.since) {
+        const mins = Math.max(0, Math.floor((Date.now() - Date.parse(g.light.since)) / 60000));
+        txt = `Accesa da ${Math.floor(mins / 60)}h ${mins % 60}m · totale ${U.fmt(ls.hours, 1)} h · ${U.fmt(ls.kWh, 2)} kWh`;
+      } else {
+        txt = `Spenta · totale ${U.fmt(ls.hours, 1)} h · ${U.fmt(ls.kWh, 2)} kWh`;
+      }
+      if (el) el.textContent = txt;
+    },
+
+    report() {
+      const g = this.grow();
+      if (!g) { U.toast('Nessuna coltivazione'); return; }
+      const cons = Store.consumption(g);
+      const ph = this.phaseInfo(g);
+      const S = Store.state.settings;
+      const r = [];
+      const push = (...c) => r.push(c.map(v => v == null ? '' : String(v)).join(';'));
+      push('GROW FAST & GROW BIG !! - Report coltivazione');
+      push('Generato', new Date().toLocaleString('it-IT'));
+      push('');
+      push('COLTIVAZIONE');
+      push('Nome', g.name);
+      push('Varieta', g.strain || '');
+      push('Genetica', g.genetics || '');
+      push('Inizio', g.startDate);
+      push('Giorno', U.dayNumber(g.startDate));
+      push('Fase', ph.phase);
+      push('Settimana', Advice.weekOf(g) + ' di ~' + this.totalWeeks());
+      push('Substrato', g.medium || '');
+      push('Vaso', g.potSize || '');
+      push('Area (cm)', (g.areaW && g.areaD) ? g.areaW + 'x' + g.areaD : '');
+      push('Piante', g.plants || '');
+      push('Tipo lampada', g.lampType || '');
+      push('Watt vegetativa', g.vegWatts || '');
+      push('Watt fioritura', g.flowerWatts || '');
+      push('');
+      push('ENERGIA (luce)');
+      push('Ore luce totali' + (cons.lightMeasured ? '' : ' (stima)'), U.fmt(cons.lightHours, 1));
+      push('Consumo (kWh)', U.fmt(cons.kWh, 2));
+      push('Tariffa (EUR/kWh)', U.fmt(S.energyCost, 3));
+      push('Costo energia (EUR)', U.fmt(cons.energyCost, 2));
+      push('');
+      push('ACQUA');
+      push('Litri totali', U.fmt(cons.liters, 1));
+      push('Tariffa (EUR/L)', U.fmt(S.waterCost, 4));
+      push('Costo acqua (EUR)', U.fmt(cons.waterCost, 2));
+      push('');
+      push('SPESE EXTRA');
+      push('Data', 'Descrizione', 'Importo (EUR)');
+      (g.expenses || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')).forEach(e => push(e.date, e.label, U.fmt(e.amount, 2)));
+      push('Totale spese (EUR)', U.fmt(cons.extraCost, 2));
+      push('');
+      push('COSTO TOTALE STIMATO (EUR)', U.fmt(cons.total, 2));
+      push('');
+      push('INTERVENTI');
+      push('Data', 'Ora', 'Tipo', 'Prodotto', 'Dose', 'pH', 'EC', 'Litri', 'Note');
+      Store.interventionsFor(g.id).slice().reverse().forEach(i => {
+        const type = (Store.INTERVENTION_TYPES.find(x => x.id === i.type) || {}).label || i.type;
+        const liters = (i.water != null) ? i.water : (/^[0-9]+([.,][0-9]+)?$/.test(String(i.amount || '')) ? i.amount : '');
+        push(i.date, i.time || '', type, i.product || '', i.amount || '', i.ph != null ? i.ph : '', i.ec != null ? i.ec : '', liters, (i.notes || '').replace(/;/g, ','));
+      });
+      push('');
+      push('NOTE GIORNALIERE');
+      push('Data', 'Ora', 'Salute', 'Note');
+      Store.entriesFor(g.id).slice().reverse().forEach(e => push(e.date, e.time || '', e.health + '/5', (e.notes || '').replace(/;/g, ',')));
+      const csv = '\ufeff' + r.join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'growfast-report-' + U.todayISO() + '.csv';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      U.toast('📄 Report scaricato');
     },
 
     /* ================= FORM: SPESA ================= */
