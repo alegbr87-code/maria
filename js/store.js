@@ -41,7 +41,9 @@
     notifications: true,
     liveInterval: 5,          // secondi tra aggiornamenti in modalità simulata
     remote: { enabled: false, url: '', room: 'maria', token: '' },
-    units: 'metric'
+    units: 'metric',
+    energyCost: 0.25,         // € per kWh (energia elettrica)
+    waterCost: 0.004          // € per litro (acqua + eventuale osmosi)
   };
 
   function defaultState() {
@@ -78,6 +80,7 @@
           g.stageLog = [{ stage: g.stage, date: g.startDate }];
         }
         if (g.plants == null) g.plants = 1;
+        if (!Array.isArray(g.expenses)) g.expenses = [];
       });
       return this.state;
     },
@@ -117,6 +120,7 @@
         light: '',         // note libere sulla lampada
         schedule: { vegHours: 18, flowerHours: 12 },
         stageLog: [],
+        expenses: [],      // spese extra: { id, date, label, amount }
         archived: false,
         createdAt: new Date().toISOString()
       }, data || {});
@@ -159,6 +163,73 @@
       g.stage = stage;
       this.save();
       return g;
+    },
+
+    /* ---- SPESE EXTRA ---- */
+    addExpense(data) {
+      const g = this.activeGrow();
+      if (!g) return null;
+      if (!Array.isArray(g.expenses)) g.expenses = [];
+      const e = Object.assign({ id: U.uid('exp'), date: U.todayISO(), label: 'Spesa', amount: 0 }, data || {});
+      g.expenses.push(e);
+      this.save();
+      return e;
+    },
+
+    removeExpense(id) {
+      const g = this.activeGrow();
+      if (!g || !Array.isArray(g.expenses)) return;
+      g.expenses = g.expenses.filter(e => e.id !== id);
+      this.save();
+    },
+
+    // Consumi e costi stimati: kWh luce (da watt x ore/phase x giorni), litri acqua, spese extra
+    consumption(grow) {
+      grow = grow || this.activeGrow();
+      if (!grow) return null;
+      const s = this.state.settings;
+      const Advice = global.Advice;
+      const today = U.todayISO();
+      const lightStages = ['germinazione', 'piantina', 'vegetativa', 'fioritura', 'flushing'];
+      const flowerStages = ['fioritura', 'flushing'];
+
+      const log = (Array.isArray(grow.stageLog) && grow.stageLog.length)
+        ? grow.stageLog.slice().sort((a, b) => a.date.localeCompare(b.date))
+        : [{ stage: grow.stage, date: grow.startDate }];
+
+      let kWh = 0;
+      for (let i = 0; i < log.length; i++) {
+        const stage = log[i].stage;
+        if (!lightStages.includes(stage)) continue;
+        const start = log[i].date;
+        const next = log[i + 1] ? log[i + 1].date : U.addDays(today, 1);
+        const days = U.daysBetween(start, next);
+        if (days <= 0) continue;
+        const t = Advice ? Advice.targetFor(stage) : { lightHours: flowerStages.includes(stage) ? 12 : 18 };
+        const watts = flowerStages.includes(stage) ? (grow.flowerWatts || 0) : (grow.vegWatts || 0);
+        kWh += (watts / 1000) * (t.lightHours || 0) * days;
+      }
+
+      let liters = 0;
+      this.interventionsFor(grow.id).forEach(i => {
+        if (i.type === 'nutrizione') {
+          const v = U.num(i.water);           // volume soluzione (L), non la dose ml/L
+          if (v) liters += v;
+        } else if (i.type === 'irrigazione' || i.type === 'cambio_acqua') {
+          const v = U.num(i.water != null ? i.water : i.amount); // volume acqua (L)
+          if (v) liters += v;
+        }
+      });
+
+      const energyCost = U.round(kWh * (s.energyCost || 0), 2);
+      const waterCost = U.round(liters * (s.waterCost || 0), 2);
+      const extraCost = U.round((grow.expenses || []).reduce((a, e) => a + (U.num(e.amount) || 0), 0), 2);
+      return {
+        kWh: U.round(kWh, 1),
+        liters: U.round(liters, 1),
+        energyCost, waterCost, extraCost,
+        total: U.round(energyCost + waterCost + extraCost, 2)
+      };
     },
 
     // Stadio attivo in una certa data (per il calendario)
@@ -363,6 +434,11 @@
         { id: U.uid('entry'), growId: g.id, date: U.todayISO(), time: '09:10', stage: 'vegetativa', health: 4, notes: 'Crescita vigorosa, internodi corti. Foglie di un bel verde, nessun segno di carenza. Pulizia foglie basse.', tags: ['salute ok'], photos: [] },
         { id: U.uid('entry'), growId: g.id, date: U.addDays(U.todayISO(), -3), time: '08:45', stage: 'vegetativa', health: 4, notes: 'Prima applicazione di LST. Recuperata bene in 24h.', tags: ['training'], photos: [] }
       );
+      g.expenses = [
+        { id: U.uid('exp'), date: U.addDays(U.todayISO(), -28), label: 'Semi (2x autofiorente)', amount: 22 },
+        { id: U.uid('exp'), date: U.addDays(U.todayISO(), -14), label: 'Fertilizzanti BioBizz', amount: 18.5 },
+        { id: U.uid('exp'), date: U.addDays(U.todayISO(), -10), label: 'Terriccio + perlite', amount: 12 }
+      ];
       this.save();
       return g;
     }

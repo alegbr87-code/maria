@@ -60,6 +60,48 @@
       return (g.stage === 'fioritura' || g.stage === 'flushing') ? (g.flowerWatts || null) : (g.vegWatts || null);
     },
 
+    phaseInfo(g, iso) {
+      const stage = Store.stageForDate(g, iso || U.todayISO());
+      const st = Store.STAGES.find(s => s.id === stage);
+      const veg = ['germinazione', 'piantina', 'vegetativa'];
+      const flow = ['fioritura', 'flushing'];
+      const cls = flow.includes(stage) ? 'flower' : veg.includes(stage) ? 'veg' : 'dry';
+      const phase = flow.includes(stage) ? 'Fioritura' : veg.includes(stage) ? 'Vegetativa' : (st ? st.label : '—');
+      return { stage, label: st ? st.label : '—', phase, cls };
+    },
+
+    // stima settimane dal seme alla raccolta
+    totalWeeks() {
+      const idx = Store.STAGES.findIndex(s => s.id === 'raccolta');
+      const days = Store.STAGES.slice(0, idx + 1).reduce((a, s) => a + s.days, 0);
+      return Math.ceil(days / 7);
+    },
+
+    weeksHTML(g) {
+      const idx = Store.STAGES.findIndex(s => s.id === 'raccolta');
+      const plan = Store.STAGES.slice(0, idx + 1);
+      let acc = 0;
+      const cum = plan.map(s => { acc += s.days; return { stage: s.id, end: acc }; });
+      const plannedStage = (dayNo) => { for (const c of cum) { if (dayNo <= c.end) return c.stage; } return plan[plan.length - 1].id; };
+
+      const totalWeeks = this.totalWeeks();
+      const curWeek = Math.max(1, Advice.weekOf(g));
+      const today = U.todayISO();
+      let cells = '';
+      for (let w = 1; w <= totalWeeks; w++) {
+        const midIso = U.addDays(g.startDate, (w - 1) * 7 + 3);
+        const isPast = U.daysBetween(midIso, today) >= 0;
+        const stage = isPast ? Store.stageForDate(g, midIso) : plannedStage((w - 1) * 7 + 4);
+        const isFlow = ['fioritura', 'flushing'].includes(stage);
+        const isNow = w === curWeek;
+        const isFuture = w > curWeek;
+        const color = this.colorFor(stage);
+        const style = (!isFuture && stage) ? `style="background:${color}22;border-color:${color}66"` : '';
+        cells += `<div class="wk ${isFuture ? 'future' : 'done'}${isNow ? ' now' : ''}" ${style}><span class="n">${w}</span><span class="f">${stage ? (isFlow ? 'Flow' : 'Veg') : '·'}</span></div>`;
+      }
+      return `<div class="weeks">${cells}</div>`;
+    },
+
     go(screen) { this.screen = screen; this.render(); window.scrollTo(0, 0); },
 
     render() {
@@ -130,6 +172,10 @@
       const tip = Advice.dailyTip(g);
       const alerts = Alerts.compute(g);
       const last = Live.value || Store.latestReading(g.id);
+      const ph = this.phaseInfo(g);
+      const curWeek = Math.max(1, Advice.weekOf(g));
+      const totalWeeks = this.totalWeeks();
+      const cons = Store.consumption(g);
 
       const rail = stages.map((s, i) =>
         `<div class="st ${i < idx ? 'done' : i === idx ? 'now' : ''}"></div>`).join('');
@@ -138,7 +184,7 @@
         <div class="hero">
           <div class="h-top">
             <div>
-              <div class="h-stage" style="color:var(--lime)">${U.esc(stage.label)}</div>
+              <div class="flex gap8 aic"><span class="phase-badge ${ph.cls}">${U.esc(ph.phase)}</span><span class="muted" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px">${U.esc(stage.label)}</span></div>
               <div class="h-name">${U.esc(g.strain || g.name)}</div>
               <div class="h-sub">${U.esc(g.genetics || g.medium || '')}</div>
             </div>
@@ -148,12 +194,31 @@
           <div class="progress"><i style="width:${Math.min(100, (idx + 0.5) / stages.length * 100).toFixed(0)}%"></i></div>
           <div class="flex between mt12">
             <span class="muted" style="font-size:12px">Inizio ${U.fmtDate(g.startDate, 'short')}</span>
-            <span class="muted" style="font-size:12px">Settimana ${Advice.weekOf(g)}</span>
+            <span class="muted" style="font-size:12px">Settimana ${curWeek} di ~${totalWeeks}</span>
           </div>
           <div class="chip-group mt12" style="gap:6px">
             ${(g.areaW && g.areaD) ? `<span class="pill blue">📐 ${g.areaW}×${g.areaD} cm</span>` : ''}
             ${g.plants ? `<span class="pill green">🌿 ${g.plants} ${g.plants === 1 ? 'pianta' : 'piante'}</span>` : ''}
             ${g.lampType ? `<span class="pill amber">💡 ${U.esc(g.lampType)}${this.wattsNow(g) ? ' ' + this.wattsNow(g) + 'W' : ''}</span>` : ''}
+          </div>
+        </div>
+
+        <div class="section-title">Percorso settimane <span class="mute2">${curWeek} / ~${totalWeeks}</span></div>
+        <div class="card">
+          ${this.weeksHTML(g)}
+          <div class="hint mt8">Fase attuale: <b>${U.esc(ph.phase)}</b> · stima dal seme alla raccolta ~${totalWeeks} settimane (con SCROG/LST può arrivare a 14–18). Il riquadro evidenziato è la settimana corrente.</div>
+        </div>
+
+        <div class="section-title">Consumi & Costi</div>
+        <div class="card">
+          <div class="cons">
+            <div class="box"><div class="l">Luce</div><div class="v mono">${cons.kWh}<span class="unit">kWh</span></div><div class="l" style="margin-top:5px;text-transform:none">≈ ${U.fmt(cons.energyCost, 2)} €</div></div>
+            <div class="box"><div class="l">Acqua</div><div class="v mono">${cons.liters}<span class="unit">L</span></div><div class="l" style="margin-top:5px;text-transform:none">≈ ${U.fmt(cons.waterCost, 2)} €</div></div>
+            <div class="box span2"><div class="l">Costo totale stimato</div><div class="v mono">${U.fmt(cons.total, 2)}<span class="unit">€</span></div><div class="l" style="margin-top:5px;text-transform:none">energia ${U.fmt(cons.energyCost, 2)} € · acqua ${U.fmt(cons.waterCost, 2)} € · spese ${U.fmt(cons.extraCost, 2)} €</div></div>
+          </div>
+          <div class="row-btns mt12">
+            <button class="btn sm" data-action="add-expense">＋ Aggiungi spesa</button>
+            <button class="btn sm" data-action="go" data-screen="setup">⚙️ Tariffe & spese</button>
           </div>
         </div>
 
@@ -669,6 +734,7 @@
       const rem = Store.state.settings.remote;
       const stages = Store.STAGES;
       const la = Advice.lightAdvice(g);
+      const cons = Store.consumption(g);
 
       return `<div class="screen">
         <div class="section-title">Coltivazioni</div>
@@ -702,6 +768,27 @@
           <div class="row-btns mt12"><button class="btn sm" data-action="edit-grow">✏️ Modifica ambiente & luce</button></div>
           ${la ? `<div class="hint mt8">💡 Per ${U.fmt(la.areaM2, 2)} m² con ${U.esc(g.lampType || 'lampada')} la potenza indicativa è <b>${la.recommended[0]}–${la.recommended[1]} W</b> (~${la.wPerM2} W/m²).${la.current ? ` In ${g.stage} stai usando ${la.current} W (${la.currentWPerM2} W/m²) → ${la.status === 'ok' ? 'in target ✅' : la.status === 'low' ? 'un po’ bassa' : 'alta'}.</b>` : ''}<br>${la.plantHint}</div>` : `<div class="hint mt8">Inserisci larghezza e profondità dell'area per ricevere il consiglio sulla potenza della lampada.</div>`}
           ` : `<div class="muted center">Nessuna coltivazione attiva.</div>`}
+        </div>
+
+        <div class="section-title">Consumi & Costi</div>
+        <div class="card">
+          ${(g && cons) ? `
+          <div class="field-row">
+            <div class="field"><label>Energia (€/kWh)</label><input class="input" type="number" step="0.01" inputmode="decimal" value="${U.numStr(Store.state.settings.energyCost, 3)}" data-action="setting" data-key="energyCost"></div>
+            <div class="field"><label>Acqua (€/L)</label><input class="input" type="number" step="0.001" inputmode="decimal" value="${U.numStr(Store.state.settings.waterCost, 4)}" data-action="setting" data-key="waterCost"></div>
+          </div>
+          <div class="cons mt8">
+            <div class="box"><div class="l">Luce (stima)</div><div class="v mono">${cons.kWh}<span class="unit">kWh</span></div><div class="l" style="margin-top:5px;text-transform:none">≈ ${U.fmt(cons.energyCost, 2)} €</div></div>
+            <div class="box"><div class="l">Acqua</div><div class="v mono">${cons.liters}<span class="unit">L</span></div><div class="l" style="margin-top:5px;text-transform:none">≈ ${U.fmt(cons.waterCost, 2)} €</div></div>
+            <div class="box span2"><div class="l">Totale stimato</div><div class="v mono">${U.fmt(cons.total, 2)}<span class="unit">€</span></div></div>
+          </div>
+          <div class="section-title" style="margin:16px 0 6px">Spese extra <span class="mute2">${U.fmt(cons.extraCost, 2)} €</span></div>
+          ${(g.expenses || []).length
+            ? g.expenses.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(e => `<div class="exp-row"><div class="lab"><div>${U.esc(e.label)}</div><div class="d">${U.fmtDate(e.date, 'short')}</div></div><span class="amt mono">${U.fmt(e.amount, 2)} €</span><button class="btn sm ghost" data-action="del-expense" data-id="${e.id}" style="color:var(--red)">🗑️</button></div>`).join('')
+            : '<div class="muted" style="font-size:13px">Nessuna spesa registrata.</div>'}
+          <div class="row-btns mt12"><button class="btn sm primary" data-action="add-expense">＋ Aggiungi spesa</button></div>
+          <div class="hint mt8">I kWh sono stimati da potenza lampada × ore di luce × giorni per stadio; i litri vengono sommati dagli interventi di irrigazione/nutrizione. Tariffe e spese sono incluse nel backup.</div>
+          ` : `<div class="muted center">Crea una coltivazione per vedere i consumi.</div>`}
         </div>
 
         <div class="section-title">Preferenze</div>
@@ -808,6 +895,8 @@
         case 'set-stage': Store.setStage(g.id, el.dataset.stage); this.render(); U.toast('Stadio aggiornato'); break;
         case 'demo': this.confirm('Carica dati demo', 'Verranno sovrascritti i dati attuali con una coltivazione di esempio.', () => { Store.seedDemo(); this.go('home'); U.toast('Demo caricata'); }); break;
         case 'reset': this.confirm('Azzerare tutto?', 'Tutti i dati verranno cancellati definitivamente.', () => { Store.reset(); this.go('home'); U.toast('Dati azzerati'); }); break;
+        case 'add-expense': this.addExpenseForm(); break;
+        case 'del-expense': Store.removeExpense(el.dataset.id); this.render(); U.toast('Spesa eliminata'); break;
         case 'add-entry': this.entryForm(); break;
         case 'edit-entry': this.entryForm(Store.state.entries.find(x => x.id === el.dataset.id)); break;
         case 'del-entry': this.confirm('Elimina nota', 'Vuoi eliminare questa nota giornaliera?', () => { Store.removeEntry(el.dataset.id); this.render(); }); break;
@@ -1165,6 +1254,24 @@
             co2: U.num(d.co2), waterTemp: U.num(d.waterTemp)
           });
           this.render(); U.toast('📈 Lettura salvata');
+        }
+      });
+    },
+
+    /* ================= FORM: SPESA ================= */
+    addExpenseForm() {
+      if (!this.grow()) { U.toast('Crea prima una coltivazione'); return; }
+      const body = `
+        <div class="field"><label>Descrizione</label><input class="input" data-field="label" placeholder="es. Semi, fertilizzanti, terriccio, lampada…"></div>
+        <div class="field-row">
+          <div class="field"><label>Importo (€)</label><input class="input" type="number" inputmode="decimal" data-field="amount" placeholder="es. 18.50"></div>
+          <div class="field"><label>Data</label><input class="input" type="date" data-field="date" value="${U.todayISO()}"></div>
+        </div>`;
+      this.openModal('Nuova spesa', body, {
+        confirmLabel: 'Aggiungi',
+        onConfirm: (d) => {
+          Store.addExpense({ label: d.label || 'Spesa', amount: U.num(d.amount) || 0, date: d.date });
+          this.render(); U.toast('💸 Spesa aggiunta');
         }
       });
     },
