@@ -474,7 +474,8 @@
       for (let i = 0; i < offset; i++) cells += `<div class="cal-day empty"></div>`;
       for (let day = 1; day <= daysInMonth; day++) {
         const iso = U.dateToISO(new Date(y, m, day));
-        const stage = Store.stageForDate(g, iso);
+        const isFuture = U.daysBetween(iso, U.todayISO()) < 0;
+        const stage = isFuture ? null : Store.stageForDate(g, iso);
         const isToday = iso === U.todayISO();
         const color = this.colorFor(stage);
         const dots = (notesBy[iso] ? `<i class="d-note"></i>` : '') +
@@ -502,9 +503,9 @@
             <button class="icon-btn" data-action="cal-next">›</button>
           </div>
         </div>
+        <div class="cal-legend" style="margin:0 0 8px">${legend}</div>
         <div class="cal-grid">${wd}${cells}</div>
-        <div class="cal-legend">${legend}</div>
-        <div class="hint mt8">Tocca un giorno per vedere note e interventi di quella data.</div>`;
+        <div class="hint mt8">Colore per stadio fino ad oggi (il futuro resta grigio). Tocca un giorno per i dettagli.</div>`;
     },
 
     dayDetail(iso) {
@@ -1544,7 +1545,8 @@
       return `
         *{box-sizing:border-box}
         body.report-doc{background:#fff;margin:0;padding:0}
-        .report{background:#fff;color:#111;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:22px;max-width:900px;margin:0 auto;font-size:13px;line-height:1.4}
+        .report{background:#fff;color:#111;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:22px;max-width:900px;margin:0 auto;font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+        .report *{box-sizing:border-box;min-width:0}
         .report h1{font-size:22px;margin:0 0 2px}
         .report .sub{color:#666;font-size:12px;margin-bottom:8px}
         .report h2{font-size:14px;margin:18px 0 8px;border-bottom:2px solid #37d67a;padding-bottom:4px;color:#0b1410;text-transform:uppercase;letter-spacing:.5px}
@@ -1553,15 +1555,24 @@
         .report table{width:100%;border-collapse:collapse;font-size:11.5px}
         .report th,.report td{border:1px solid #ddd;padding:5px 6px;text-align:left;vertical-align:top}
         .report th{background:#f2f7f4}
-        .report .rgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+        .report .rgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
         .report .rw{font-size:9px;text-align:center;color:#888;font-weight:700}
-        .report .rc{aspect-ratio:1;border:1px solid #eee;border-radius:4px;font-size:10px;display:flex;align-items:center;justify-content:center;color:#111}
+        .report .rc{aspect-ratio:1;border:1px solid #e6e6e6;border-radius:4px;font-size:9.5px;display:flex;align-items:center;justify-content:center;color:#111;overflow:hidden}
         .report .rc.empty{border:none}
-        .report .rmon{margin:12px 0 4px}
+        .report .rmon{margin:10px 0 4px;min-width:0}
         .report .rmon-t{font-weight:700;font-size:12px;text-transform:capitalize;margin-bottom:4px}
-        .report .cal-wrap{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
-        .report .legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;margin-top:8px;color:#444}
-        .report .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px}
+        .report .cal-wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+        .report .legend{display:flex;flex-wrap:wrap;gap:8px 12px;font-size:10.5px;margin:0 0 8px;color:#444}
+        .report .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:middle}
+        .report .rday{border:1px solid #e6e6e6;border-left:4px solid #ccc;border-radius:8px;padding:8px 10px;margin-bottom:8px}
+        .report .rday-h{font-weight:700;font-size:12.5px;color:#0b1410;margin-bottom:4px}
+        .report .rday-h .rday-n{color:#777;font-weight:600}
+        .report .rday-kpis{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:#333;margin-bottom:4px}
+        .report .rday-kpis b{font-weight:700}
+        .report .rday-body{font-size:12px;color:#333;white-space:pre-wrap}
+        .report .rday-body .rday-int{display:flex;gap:6px;border-top:1px dashed #eee;padding-top:3px;margin-top:3px}
+        .report .rday-body .rday-int .t{color:#666;white-space:nowrap}
+        .report .empty-day{color:#aaa;font-style:italic}
         .report .gallery{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
         .report .gallery figure{margin:0}
         .report .gallery img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;border:1px solid #ddd}
@@ -1597,7 +1608,8 @@
       for (let i = 0; i < offset; i++) cells += '<div class="rc empty"></div>';
       for (let d = 1; d <= days; d++) {
         const iso = U.dateToISO(new Date(y, m, d));
-        const stage = Store.stageForDate(g, iso);
+        const isFuture = U.daysBetween(iso, U.todayISO()) < 0;
+        const stage = isFuture ? null : Store.stageForDate(g, iso);
         const bg = stage ? `background:${this.colorFor(stage)}` : 'background:#f4f4f4';
         const dot = withNote[iso] ? '<span style="font-size:8px">●</span>' : '';
         cells += `<div class="rc" style="${bg}" title="${iso} ${stage || ''}">${d}${dot}</div>`;
@@ -1605,6 +1617,64 @@
       const name = first.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
       const wd = ['L', 'M', 'M', 'G', 'V', 'S', 'D'].map(x => `<div class="rw">${x}</div>`).join('');
       return `<div class="rmon"><div class="rmon-t">${U.esc(name)}</div><div class="rgrid">${wd}${cells}</div></div>`;
+    },
+
+    lightHoursForDate(g, iso) {
+      const t0 = U.isoToDate(iso).getTime();
+      const t1 = t0 + 86400000;
+      let ms = 0;
+      ((g.light && g.light.log) || []).forEach(s => {
+        const a = Date.parse(s.start);
+        const b = s.end ? Date.parse(s.end) : Date.now();
+        const from = Math.max(t0, a), to = Math.min(t1, b);
+        if (to > from) ms += (to - from);
+      });
+      return U.round(ms / 3600000, 1);
+    },
+
+    waterLitersForDate(g, iso) {
+      let l = 0;
+      Store.interventionsFor(g.id).forEach(i => {
+        if (i.date !== iso) return;
+        if (i.type === 'nutrizione') { const v = U.num(i.water); if (v) l += v; }
+        else if (i.type === 'irrigazione' || i.type === 'cambio_acqua') { const v = U.num(i.water != null ? i.water : i.amount); if (v) l += v; }
+      });
+      return U.round(l, 1);
+    },
+
+    reportDayByDay(g) {
+      const byE = {}, byI = {};
+      Store.entriesFor(g.id).forEach(e => { (byE[e.date] = byE[e.date] || []).push(e); });
+      Store.interventionsFor(g.id).forEach(i => { (byI[i.date] = byI[i.date] || []).push(i); });
+      const today = U.todayISO();
+      let out = '';
+      for (let iso = g.startDate; U.daysBetween(iso, today) >= 0; iso = U.addDays(iso, 1)) {
+        const stage = Store.stageForDate(g, iso);
+        const st = Store.STAGES.find(s => s.id === stage);
+        const color = stage ? this.colorFor(stage) : '#bbb';
+        const day = U.dayNumber(g.startDate, iso);
+        const lh = this.lightHoursForDate(g, iso);
+        const wl = this.waterLitersForDate(g, iso);
+        const evs = byE[iso] || [];
+        const ivs = byI[iso] || [];
+        const imgs = evs.reduce((a, e) => a.concat(e.photos || []), []);
+        const notes = evs.filter(e => e.notes).map(e => U.esc(e.notes)).join('<br>');
+        const ivHtml = ivs.map(i => {
+          const type = (Store.INTERVENTION_TYPES.find(x => x.id === i.type) || {}).label || i.type;
+          const det = [i.product, i.amount, i.ph != null ? 'pH ' + U.fmt(i.ph, 1) : '', i.ec != null ? 'EC ' + U.fmt(i.ec, 2) : '', (i.water != null ? U.fmt(i.water, 1) + ' L' : '')].filter(Boolean).join(' · ');
+          return `<div class="rday-int"><span class="t">${i.time || ''}</span><span>🔧 <b>${U.esc(type)}</b>${det ? ' — ' + U.esc(det) : ''}${i.notes ? ' · ' + U.esc(i.notes) : ''}</span></div>`;
+        }).join('');
+        const hasContent = notes || ivHtml || imgs.length;
+        out += `<div class="rday" style="border-left-color:${color}">
+            <div class="rday-h">${U.esc(U.fmtDate(iso))}${st ? ' · ' + U.esc(st.label) : ''} <span class="rday-n">· giorno ${day}</span></div>
+            <div class="rday-kpis">${lh > 0 ? `<span>💡 <b>${U.fmt(lh, 1)} h</b> luce</span>` : ''}${wl > 0 ? `<span>💧 <b>${U.fmt(wl, 1)} L</b> acqua</span>` : ''}${ivs.length ? `<span>🔧 <b>${ivs.length}</b> interventi</span>` : ''}</div>
+            ${notes ? `<div class="rday-body">${notes}</div>` : ''}
+            ${ivHtml}
+            ${imgs.length ? `<div class="rg">${imgs.map(p => `<img src="${p}" alt="">`).join('')}</div>` : ''}
+            ${!hasContent ? '<div class="rday-body empty-day">— nessuna attività registrata —</div>' : ''}
+          </div>`;
+      }
+      return out;
     },
 
     reportHTML(g) {
@@ -1635,11 +1705,6 @@
 
       const expenses = (g.expenses || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(e => `<tr><td>${U.fmtDate(e.date, 'short')}</td><td>${U.esc(e.label)}</td><td>${U.fmt(e.amount, 2)} €</td></tr>`).join('');
 
-      const notes = Store.entriesFor(g.id).slice().reverse().map(e => {
-        const imgs = (e.photos || []).map(p => `<img src="${p}" alt="">`).join('');
-        return `<div class="rnote"><div class="rnote-h">${U.fmtDate(e.date, 'short')}${e.time ? ' · ' + e.time : ''} · salute ${e.health}/5</div>${e.notes ? `<div class="rnote-b">${U.esc(e.notes)}</div>` : ''}${imgs ? `<div class="rg">${imgs}</div>` : ''}</div>`;
-      }).join('');
-
       const photos = this.photoList();
       const gallery = photos.map(p => `<figure><img src="${p.src}" alt=""><figcaption>${U.fmtDate(p.date, 'short')}</figcaption></figure>`).join('');
 
@@ -1660,9 +1725,12 @@
         <div class="kv2"><span>Spese extra</span><b>${U.fmt(cons.extraCost, 2)} €</b></div>
         <div class="kv2" style="font-size:15px"><span><b>COSTO TOTALE</b></span><b>${U.fmt(cons.total, 2)} €</b></div>
 
-        <h2>Calendario coltivazione (dall'inizio ad oggi)</h2>
-        <div class="cal-wrap">${this.reportCalendarHTML(g)}</div>
+        <h2>Calendario (colore per stadio, solo fino ad oggi)</h2>
         <div class="legend">${legend}</div>
+        <div class="cal-wrap">${this.reportCalendarHTML(g)}</div>
+
+        <h2>Diario giorno per giorno (${day} giorni)</h2>
+        ${this.reportDayByDay(g)}
 
         ${gallery ? `<h2>Foto / Time-lapse (${photos.length})</h2><div class="gallery">${gallery}</div>` : ''}
 
@@ -1670,9 +1738,6 @@
         <table><thead><tr><th>Data</th><th>Ora</th><th>Tipo</th><th>Prodotto</th><th>Dose</th><th>pH</th><th>EC</th><th>Litri</th><th>Note</th></tr></thead><tbody>${ints || '<tr><td colspan="9">Nessun intervento</td></tr>'}</tbody></table>
 
         ${expenses ? `<h2>Spese extra</h2><table><thead><tr><th>Data</th><th>Descrizione</th><th>Importo</th></tr></thead><tbody>${expenses}</tbody></table>` : ''}
-
-        <h2>Note giornaliere (${Store.entriesFor(g.id).length})</h2>
-        ${notes || '<div>Nessuna nota</div>'}
       `;
     },
 
