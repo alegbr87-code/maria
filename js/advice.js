@@ -100,10 +100,11 @@
     lightAdvice(grow) {
       if (!grow || !grow.areaW || !grow.areaD) return null;
       const areaM2 = (grow.areaW / 100) * (grow.areaD / 100);
-      const perM2 = { 'MH': 55, 'HPS': 65, 'MH + HPS': 60, 'LED': 40, 'CMH / LEC': 50, 'CFL': 20, 'Altro': 40 };
-      const base = perM2[grow.lampType] || 40;
-      const loW = Math.round(areaM2 * base * 0.8);
-      const hiW = Math.round(areaM2 * base * 1.25);
+      // Watt per m² realistici (potenza assorbita reale) per coltivazione intensiva indoor
+      const perM2 = { 'MH': 300, 'HPS': 400, 'MH + HPS': 350, 'LED': 250, 'CMH / LEC': 300, 'CFL': 130, 'Altro': 250 };
+      const base = perM2[grow.lampType] || 250;
+      const loW = Math.max(50, Math.round(areaM2 * base * 0.8));
+      const hiW = Math.max(70, Math.round(areaM2 * base * 1.25));
       const plants = grow.plants || 1;
       const areaPerPlant = areaM2 / plants;
       const out = {

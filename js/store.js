@@ -83,6 +83,7 @@
         if (!Array.isArray(g.expenses)) g.expenses = [];
         if (!g.light || typeof g.light !== 'object') g.light = { on: false, since: null, log: [] };
         if (!Array.isArray(g.light.log)) g.light.log = [];
+        if (!g.strainInfo || typeof g.strainInfo !== 'object') g.strainInfo = {};
       });
       return this.state;
     },
@@ -124,6 +125,7 @@
         stageLog: [],
         expenses: [],      // spese extra: { id, date, label, amount }
         light: { on: false, since: null, log: [] }, // registro accensione luce: {start,end,watts}
+        strainInfo: {},    // scheda tecnica della varietà (THC, CBD, rese, altezza, ecc.)
         archived: false,
         createdAt: new Date().toISOString()
       }, data || {});
@@ -231,12 +233,13 @@
       grow = grow || this.activeGrow();
       if (!grow) return null;
       const s = this.state.settings;
-      const Advice = global.Advice;
       const today = U.todayISO();
       const lightStages = ['germinazione', 'piantina', 'vegetativa', 'fioritura', 'flushing'];
       const flowerStages = ['fioritura', 'flushing'];
+      const vegH = (grow.schedule && grow.schedule.vegHours) || 18;
+      const flowH = (grow.schedule && grow.schedule.flowerHours) || 12;
 
-      // stima da stadi (fallback se non ci sono accensioni registrate)
+      // conteggio automatico dal TIMER (ore/giorno per fase), giorno per giorno fino ad oggi
       const log = (Array.isArray(grow.stageLog) && grow.stageLog.length)
         ? grow.stageLog.slice().sort((a, b) => a.date.localeCompare(b.date))
         : [{ stage: grow.stage, date: grow.startDate }];
@@ -248,10 +251,10 @@
         const next = log[i + 1] ? log[i + 1].date : U.addDays(today, 1);
         const days = U.daysBetween(start, next);
         if (days <= 0) continue;
-        const t = Advice ? Advice.targetFor(stage) : { lightHours: flowerStages.includes(stage) ? 12 : 18 };
+        const hours = flowerStages.includes(stage) ? flowH : vegH; // timer impostato dall'utente
         const watts = flowerStages.includes(stage) ? (grow.flowerWatts || 0) : (grow.vegWatts || 0);
-        estKWh += (watts / 1000) * (t.lightHours || 0) * days;
-        estHours += (t.lightHours || 0) * days;
+        estKWh += (watts / 1000) * hours * days;
+        estHours += hours * days;
       }
 
       const ls = this.lightStats(grow);

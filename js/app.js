@@ -127,23 +127,12 @@
     headerHTML(g) {
       const nAlerts = g ? Alerts.count(g) : 0;
       const bell = `<button class="icon-btn" data-action="go" data-screen="home" style="position:relative" aria-label="Vai alla home">${ICONS.bell}${nAlerts ? `<span style="position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:10px;font-weight:800;border-radius:999px;min-width:17px;height:17px;display:grid;place-items:center;padding:0 4px">${nAlerts}</span>` : ''}</button>`;
-      if (this.screen === 'home') {
-        const sub = U.fmtDate(U.todayISO()) + (g ? ' · ' + g.name : '');
-        return `<header class="app-header">
-          <div class="brand-dot">${ICONS.arrow}</div>
-          <div class="app-name" style="flex:1">GROW FAST <span style="color:var(--green)">&amp;</span> GROW BIG !!<small>${U.esc(sub)}</small></div>
-          ${bell}
-        </header>`;
-      }
-      const titles = {
-        diary: ['Diario', 'Appunti giornalieri'],
-        live: ['Live', 'Parametri e controllo remoto'],
-        tools: ['Strumenti', 'Consigli e calcolatori']
-      };
-      const t = titles[this.screen] || ['GROW FAST & GROW BIG !!', ''];
+      // Il nome dell'app resta SEMPRE fisso; la scheda corrente va nel sottotitolo
+      const sec = { home: '', diary: 'Diario', live: 'Live', tools: 'Strumenti' }[this.screen] || '';
+      const sub = [sec, U.fmtDate(U.todayISO())].filter(Boolean).join(' · ');
       return `<header class="app-header">
         <div class="brand-dot">${ICONS.arrow}</div>
-        <div class="title">${U.esc(t[0])}<small>${U.esc(t[1] || '')}</small></div>
+        <div class="app-name" style="flex:1">GROW FAST <span style="color:var(--green)">&amp;</span> GROW BIG !!<small>${U.esc(sub)}</small></div>
         ${bell}
       </header>`;
     },
@@ -186,6 +175,7 @@
       const totalWeeks = this.totalWeeks();
       const cons = Store.consumption(g);
       const la = Advice.lightAdvice(g);
+      const lt = this.lightToday(g);
 
       const rail = stages.map((s, i) =>
         `<div class="st ${i < idx ? 'done' : i === idx ? 'now' : ''}"></div>`).join('');
@@ -200,7 +190,10 @@
           <div class="h-top">
             <div>
               <div class="flex gap8 aic"><span class="phase-badge ${ph.cls}">${U.esc(ph.phase)}</span><span class="muted" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px">${U.esc(stage.label)}</span></div>
-              <div class="h-name">${U.esc(g.strain || g.name)}</div>
+              <div class="flex gap8 aic">
+                <span class="h-name" style="margin:0">${U.esc(g.strain || g.name)}</span>
+                <button class="info-btn" data-action="strain-info" aria-label="Info varietà">i</button>
+              </div>
               <div class="h-sub">${U.esc(g.genetics || g.medium || '')}</div>
             </div>
             <div class="h-day"><div class="n">${day}</div><div class="l">giorno</div></div>
@@ -222,6 +215,8 @@
         <div class="quick">
           <button class="qbtn water" data-action="quick-water"><span class="qi">💧</span><span>Acqua<br><small class="mute2">litri irrigati</small></span></button>
           <button class="qbtn feed" data-action="quick-feed"><span class="qi">🧪</span><span>Fertilizzante<br><small class="mute2">marca · tipo · dose</small></span></button>
+          <button class="qbtn" data-action="quick-photo"><span class="qi">📷</span><span>Foto<br><small class="mute2">con data</small></span></button>
+          <button class="qbtn" data-action="timelapse"><span class="qi">🎞️</span><span>Time-lapse<br><small class="mute2">tutte le foto</small></span></button>
           <button class="qbtn" data-action="add-entry"><span class="qi">📝</span><span>Nota giorno</span></button>
           <button class="qbtn" data-action="add-intervention"><span class="qi">🔧</span><span>Intervento</span></button>
         </div>
@@ -238,28 +233,28 @@
             <div class="field"><label>Watt in vegetativa</label><input class="input" type="number" inputmode="numeric" data-action="grow-field" data-field="vegWatts" value="${U.numStr(g.vegWatts)}" placeholder="es. 250"></div>
             <div class="field"><label>Watt in fioritura</label><input class="input" type="number" inputmode="numeric" data-action="grow-field" data-field="flowerWatts" value="${U.numStr(g.flowerWatts)}" placeholder="es. 400"></div>
           </div>
+          ${la ? `<div class="hint mt8">💡 Consiglio potenza: per ${U.fmt(la.areaM2, 2)} m² con ${U.esc(g.lampType)} → <b>${la.recommended[0]}–${la.recommended[1]} W</b>${la.current ? ` (ora ${la.current} W · ${la.currentWPerM2} W/m² → ${la.status === 'ok' ? 'ok ✅' : la.status === 'low' ? 'un po’ bassa' : 'alta'})` : ''}.</div>` : ''}
+        </div>
+
+        <div class="section-title">🔆 Luce & timer <span class="mute2">${cons.lightMeasured ? 'misurata' : 'da timer'}</span></div>
+        <div class="card">
           <div class="field-row">
-            <div class="field"><label>Larghezza (cm)</label><input class="input" type="number" inputmode="numeric" data-action="grow-field" data-field="areaW" value="${U.numStr(g.areaW)}" placeholder="es. 100"></div>
-            <div class="field"><label>Profondità (cm)</label><input class="input" type="number" inputmode="numeric" data-action="grow-field" data-field="areaD" value="${U.numStr(g.areaD)}" placeholder="es. 50"></div>
+            <div class="field"><label>Timer vegetativa (h/giorno)</label><input class="input" type="number" inputmode="numeric" data-action="grow-field" data-field="schedule.vegHours" value="${U.numStr(g.schedule.vegHours)}"></div>
+            <div class="field"><label>Timer fioritura (h/giorno)</label><input class="input" type="number" inputmode="numeric" data-action="grow-field" data-field="schedule.flowerHours" value="${U.numStr(g.schedule.flowerHours)}"></div>
           </div>
-          <div class="field-row">
-            <div class="field"><label>N° piante</label><input class="input" type="number" inputmode="numeric" data-action="grow-field" data-field="plants" value="${U.numStr(g.plants != null ? g.plants : 1)}"></div>
-            <div class="field"><label>Varietà</label><input class="input" data-action="grow-field" data-field="strain" value="${U.esc(g.strain || '')}" placeholder="es. Northern Lights"></div>
-          </div>
-          <div class="toggle-row" style="margin-top:6px;padding-top:12px">
+          <div class="toggle-row" style="padding-top:10px">
             <div>
               <div class="t-title">${cons.lightOn ? '💡 Luce ACCESA' : '🌑 Luce spenta'}</div>
               <div class="t-sub" id="light-elapsed">—</div>
             </div>
             <button class="btn ${cons.lightOn ? 'danger' : 'primary'} sm" data-action="light-toggle">${cons.lightOn ? '⏻ Spegni' : '⏻ Accendi'}</button>
           </div>
-          ${la ? `<div class="hint mt8">💡 Consiglio potenza: per ${U.fmt(la.areaM2, 2)} m² con ${U.esc(g.lampType)} → <b>${la.recommended[0]}–${la.recommended[1]} W</b>${la.current ? ` (ora ${la.current} W · ${la.currentWPerM2} W/m² → ${la.status === 'ok' ? 'ok ✅' : la.status === 'low' ? 'un po’ bassa' : 'alta'})` : ''}.</div>` : ''}
-        </div>
-
-        <div class="section-title">Percorso settimane <span class="mute2">${curWeek} / ~${totalWeeks}</span></div>
-        <div class="card">
-          ${this.weeksHTML(g)}
-          <div class="hint mt8">Fase attuale: <b>${U.esc(ph.phase)}</b> · stima dal seme alla raccolta ~${totalWeeks} settimane (con SCROG/LST può arrivare a 14–18). Il riquadro evidenziato è la settimana corrente.</div>
+          <div class="cons mt12">
+            <div class="box"><div class="l">Oggi ${lt.measured ? '(reale)' : '(timer)'}</div><div class="v mono">${U.fmt(lt.on, 1)}<span class="unit">h ON</span></div><div class="l" style="margin-top:5px;text-transform:none">${U.fmt(24 - lt.on, 1)} h OFF</div></div>
+            <div class="box"><div class="l">Totale ore</div><div class="v mono">${U.fmt(cons.lightHours, 0)}<span class="unit">h</span></div><div class="l" style="margin-top:5px;text-transform:none">${day} giorni</div></div>
+            <div class="box span2"><div class="l">Energia · ${cons.kWh} kWh</div><div class="v mono">${U.fmt(cons.energyCost, 2)}<span class="unit">€</span></div><div class="l" style="margin-top:5px;text-transform:none">${cons.lightMeasured ? 'misurata con accendi/spegni' : 'conteggio automatico dal timer'}</div></div>
+          </div>
+          <div class="hint mt8">Il contatore somma ogni giorno le ore ON/OFF in base al timer, dall'inizio fino ad oggi. Il pulsante ⏻ registra le ore reali (più precise).</div>
         </div>
 
         <div class="section-title">Consumi & Costi</div>
@@ -276,7 +271,7 @@
           ${(g.expenses || []).length ? `<div class="mt12">${g.expenses.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(e => `<div class="exp-row"><div class="lab"><div>${U.esc(e.label)}</div><div class="d">${U.fmtDate(e.date, 'short')}</div></div><span class="amt mono">${U.fmt(e.amount, 2)} €</span><button class="btn sm ghost" data-action="del-expense" data-id="${e.id}" style="color:var(--red)">🗑️</button></div>`).join('')}</div>` : ''}
           <div class="row-btns mt12">
             <button class="btn sm primary" data-action="add-expense">＋ Aggiungi spesa</button>
-            <button class="btn sm" data-action="report">📄 Scarica report</button>
+            <button class="btn sm" data-action="report">📄 Report / Stampa</button>
           </div>
         </div>
 
@@ -600,6 +595,36 @@
             <button class="btn sm" data-action="clear-readings" style="color:var(--red)">🗑️ Svuota storico parametri</button>
           </div>
         </div>
+
+        <div class="section-title">📡 Controllo remoto (tempo reale)</div>
+        <div class="card">
+          <div class="toggle-row">
+            <div><div class="t-title">Backend remoto</div><div class="t-sub">Collega sensori e attuatori via WebSocket</div></div>
+            <label class="switch"><input type="checkbox" data-action="toggle-remote" ${Store.state.settings.remote.enabled ? 'checked' : ''}><span class="slider"></span></label>
+          </div>
+          <div class="field mt12"><label>URL WebSocket</label><input class="input" type="url" id="rem-url" placeholder="wss://tuo-server.esempio" value="${U.esc(Store.state.settings.remote.url)}" data-action="setting" data-key="remote.url"></div>
+          <div class="field-row">
+            <div class="field"><label>Stanza / Room</label><input class="input" id="rem-room" value="${U.esc(Store.state.settings.remote.room)}" data-action="setting" data-key="remote.room"></div>
+            <div class="field"><label>Token (opz.)</label><input class="input" id="rem-token" value="${U.esc(Store.state.settings.remote.token)}" data-action="setting" data-key="remote.token"></div>
+          </div>
+          <div class="row-btns">
+            <button class="btn primary sm" data-action="live-remote">📡 Connetti ora</button>
+            <button class="btn sm" data-action="live-sim">▶ Modalità demo</button>
+          </div>
+          <div class="hint mt8">Senza backend usa la <b>modalità demo</b>. Per il controllo reale vedi la cartella <b>server/</b>.</div>
+        </div>
+
+        <div class="section-title">⚙️ Preferenze</div>
+        <div class="card">
+          <div class="field-row">
+            <div class="field"><label>Δ foglia (VPD) °C</label><input class="input" type="number" step="0.5" id="set-leaf" value="${U.numStr(Store.state.settings.leafOffset, 1)}" data-action="setting" data-key="leafOffset"></div>
+            <div class="field"><label>Intervallo live (s)</label><input class="input" type="number" inputmode="numeric" id="set-live" value="${Store.state.settings.liveInterval}" data-action="setting" data-key="liveInterval"></div>
+          </div>
+          <div class="toggle-row">
+            <div><div class="t-title">Notifiche alert</div><div class="t-sub">Avvisi su parametri critici e task</div></div>
+            <label class="switch"><input type="checkbox" data-action="toggle-setting" data-key="notifications" ${Store.state.settings.notifications ? 'checked' : ''}><span class="slider"></span></label>
+          </div>
+        </div>
       </div>`;
     },
 
@@ -783,7 +808,6 @@
     /* ================= CONFIGURAZIONE (in fondo alla home) ================= */
     configHTML(g) {
       g = g || this.grow();
-      const rem = Store.state.settings.remote;
 
       return `<div class="config-block">
         <div class="section-title">⚙️ Configurazione</div>
@@ -799,36 +823,6 @@
           <button class="btn primary sm" data-action="new-grow">+ Nuova</button>
           ${Store.state.grows.length > 1 ? `<button class="btn sm" data-action="switch-grow">🔄 Cambia attiva</button>` : ''}
           ${g ? `<button class="btn sm danger" data-action="del-grow">🗑️ Elimina attiva</button>` : ''}
-        </div>
-
-        <div class="section-title">Preferenze</div>
-        <div class="card">
-          <div class="field-row">
-            <div class="field"><label>Δ foglia (VPD) °C</label><input class="input" type="number" step="0.5" id="set-leaf" value="${U.numStr(Store.state.settings.leafOffset, 1)}" data-action="setting" data-key="leafOffset"></div>
-            <div class="field"><label>Intervallo live (s)</label><input class="input" type="number" inputmode="numeric" id="set-live" value="${Store.state.settings.liveInterval}" data-action="setting" data-key="liveInterval"></div>
-          </div>
-          <div class="toggle-row">
-            <div><div class="t-title">Notifiche alert</div><div class="t-sub">Avvisi su parametri critici e task</div></div>
-            <label class="switch"><input type="checkbox" data-action="toggle-setting" data-key="notifications" ${Store.state.settings.notifications ? 'checked' : ''}><span class="slider"></span></label>
-          </div>
-        </div>
-
-        <div class="section-title">Controllo remoto (tempo reale)</div>
-        <div class="card">
-          <div class="toggle-row">
-            <div><div class="t-title">Backend remoto</div><div class="t-sub">Collega sensori e attuatori via WebSocket</div></div>
-            <label class="switch"><input type="checkbox" data-action="toggle-remote" ${rem.enabled ? 'checked' : ''}><span class="slider"></span></label>
-          </div>
-          <div class="field mt12"><label>URL WebSocket</label><input class="input" type="url" id="rem-url" placeholder="wss://tuo-server.esempio" value="${U.esc(rem.url)}" data-action="setting" data-key="remote.url"></div>
-          <div class="field-row">
-            <div class="field"><label>Stanza / Room</label><input class="input" id="rem-room" value="${U.esc(rem.room)}" data-action="setting" data-key="remote.room"></div>
-            <div class="field"><label>Token (opz.)</label><input class="input" id="rem-token" value="${U.esc(rem.token)}" data-action="setting" data-key="remote.token"></div>
-          </div>
-          <div class="row-btns">
-            <button class="btn primary sm" data-action="live-remote">📡 Connetti ora</button>
-            <button class="btn sm" data-action="live-sim">▶ Modalità demo</button>
-          </div>
-          <div class="hint mt8">Senza backend puoi usare la <b>modalità demo</b>: simula sensori e attuatori sul telefono. Per il controllo reale vedi la cartella <b>server/</b> (backend Node.js pronto da avviare/deployare).</div>
         </div>
 
         <div class="section-title">Dati</div>
@@ -882,7 +876,14 @@
           const g = this.grow(); if (!g) return;
           const field = t.dataset.field;
           const value = (t.type === 'number') ? U.num(t.value) : t.value;
-          Store.updateGrow(g.id, { [field]: value });
+          if (field.indexOf('.') > -1) {
+            const parts = field.split('.');
+            const nested = Object.assign({}, g[parts[0]]);
+            nested[parts[1]] = value;
+            Store.updateGrow(g.id, { [parts[0]]: nested });
+          } else {
+            Store.updateGrow(g.id, { [field]: value });
+          }
           U.toast('Salvato');
           this.render();
         }
@@ -917,6 +918,16 @@
         case 'del-expense': Store.removeExpense(el.dataset.id); this.render(); U.toast('Spesa eliminata'); break;
         case 'light-toggle': { const on = Store.lightToggle(); this.render(); U.toast(on ? '💡 Luce ACCESA — conteggio ore avviato' : '🌑 Luce spenta'); break; }
         case 'report': this.report(); break;
+        case 'report-print': this.reportPrint(); break;
+        case 'report-html': this.reportDownloadHTML(); break;
+        case 'report-close': this.reportClose(); break;
+        case 'strain-info': this.strainInfoModal(); break;
+        case 'edit-strain': this.strainInfoForm(); break;
+        case 'quick-photo': this.photoForm(); break;
+        case 'timelapse': this.timelapse(); break;
+        case 'tl-play': this.toggleTimelapse(); break;
+        case 'tl-close': this.stopTimelapse(); break;
+        case 'tl-go': this.tlShow(parseInt(el.dataset.tlIdx, 10)); break;
         case 'add-entry': this.entryForm(); break;
         case 'edit-entry': this.entryForm(Store.state.entries.find(x => x.id === el.dataset.id)); break;
         case 'del-entry': this.confirm('Elimina nota', 'Vuoi eliminare questa nota giornaliera?', () => { Store.removeEntry(el.dataset.id); this.render(); }); break;
@@ -1337,6 +1348,145 @@
       });
     },
 
+    /* ================= ORE LUCE OGGI ================= */
+    lightToday(g) {
+      const timer = (g.stage === 'fioritura' || g.stage === 'flushing')
+        ? ((g.schedule && g.schedule.flowerHours) || 12)
+        : ((g.schedule && g.schedule.vegHours) || 18);
+      const dayStart = U.isoToDate(U.todayISO()).getTime();
+      const dayEnd = dayStart + 86400000;
+      let ms = 0, any = false;
+      ((g.light && g.light.log) || []).forEach(s => {
+        const a = Date.parse(s.start);
+        const b = s.end ? Date.parse(s.end) : Date.now();
+        const from = Math.max(dayStart, a), to = Math.min(dayEnd, b);
+        if (to > from) { ms += (to - from); any = true; }
+      });
+      return { on: any ? U.round(ms / 3600000, 1) : timer, measured: any, timer };
+    },
+
+    /* ================= SCHEDA TECNICA VARIETÀ ================= */
+    strainFields() {
+      return [
+        ['varieties', 'Varietà', 'es. Fotoperiodica'],
+        ['thc', 'THC', 'es. Fino al 27%'],
+        ['cbd', 'CBD', 'es. Basso'],
+        ['yieldIn', 'Rese', 'es. 500 – 550 gr/m²'],
+        ['yieldOut', "Rese all'aperto", 'es. 550 – 600 gr/plant'],
+        ['height', 'Altezza', 'es. 90 – 160 cm'],
+        ['heightOut', "Altezza all'aperto", 'es. 130 – 170 cm'],
+        ['flowerTime', 'Tempo di fioritura', 'es. 55 – 65 giorni'],
+        ['harvestMonth', 'Mese di raccolta', 'es. Metà ottobre'],
+        ['geneticsText', 'Patrimonio genetico', 'es. Sour Dubb x Chem Sis x Chocolate Diesel'],
+        ['type', 'Tipo', 'es. Sativa 50% Indica 50%'],
+        ['effect', 'Effetto', 'es. Calmante, Lucido'],
+        ['climate', 'Clima', 'es. Estati brevi'],
+        ['flavor', 'Sapore', 'es. Cioccolato, Diesel, Fruttato, Pino']
+      ];
+    },
+
+    strainInfoModal() {
+      const g = this.grow(); if (!g) return;
+      const info = g.strainInfo || {};
+      const rows = this.strainFields().map(([k, label]) => {
+        const val = info[k];
+        return `<div class="kv"><span class="k">${U.esc(label)}</span><b>${val ? U.esc(val) : '<span class="mute2">—</span>'}</b></div>`;
+      }).join('');
+      const body = `
+        <div class="muted mb12">${U.esc(g.strain || g.name)}${g.genetics ? ' · ' + U.esc(g.genetics) : ''}</div>
+        <div class="card" style="box-shadow:none">${rows}</div>
+        <div class="row-btns mt12"><button class="btn sm primary" data-action="edit-strain">✏️ Modifica scheda</button></div>`;
+      this.openModal('📋 Scheda tecnica varietà', body, { confirmLabel: 'Chiudi', onConfirm: () => {} });
+    },
+
+    strainInfoForm() {
+      const g = this.grow(); if (!g) return;
+      const info = g.strainInfo || {};
+      const body = this.strainFields().map(([k, label, ph]) =>
+        `<div class="field"><label>${U.esc(label)}</label><input class="input" data-field="${k}" value="${U.esc(info[k] || '')}" placeholder="${U.esc(ph)}"></div>`
+      ).join('');
+      this.openModal('✏️ Scheda tecnica varietà', body, {
+        confirmLabel: 'Salva',
+        onConfirm: (d) => {
+          const next = {};
+          this.strainFields().forEach(([k]) => { next[k] = (d[k] || '').trim(); });
+          Store.updateGrow(g.id, { strainInfo: next });
+          this.render(); U.toast('Scheda salvata');
+        }
+      });
+    },
+
+    /* ================= FOTO & TIME-LAPSE ================= */
+    photoForm() {
+      if (!this.grow()) { U.toast('Crea prima una coltivazione'); return; }
+      const body = `
+        <div class="hint mb12">📅 ${U.fmtDate(U.todayISO())} · ore ${U.nowTime()}</div>
+        <div class="field"><label>Data</label><input class="input" type="date" data-field="date" value="${U.todayISO()}"></div>
+        <div class="field"><label>Foto (una o più)</label><input class="input" type="file" accept="image/*" multiple id="photo-input"></div>
+        <div class="field"><label>Nota (opz.)</label><input class="input" data-field="notes" placeholder="es. fioritura giorno 20"></div>`;
+      this.openModal('📷 Foto giornaliera', body, {
+        confirmLabel: 'Salva foto',
+        onConfirm: (d) => {
+          const el = document.getElementById('photo-input');
+          this.readPhotos(el, (imgs) => {
+            if (!imgs || !imgs.length) { U.toast('Seleziona almeno una foto'); return; }
+            Store.addEntry({ date: d.date || U.todayISO(), time: U.nowTime(), notes: d.notes || 'Foto', tags: ['foto'], photos: imgs });
+            this.render(); U.toast('📷 Foto salvata');
+          });
+        }
+      });
+    },
+
+    photoList() {
+      const g = this.grow();
+      if (!g) return [];
+      const out = [];
+      Store.entriesFor(g.id).forEach(e => (e.photos || []).forEach(src => out.push({ date: e.date, time: e.time || '', src })));
+      out.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+      return out;
+    },
+
+    timelapse() {
+      const g = this.grow(); if (!g) return;
+      const photos = this.photoList();
+      if (!photos.length) { U.toast('Nessuna foto: aggiungine con 📷 Foto'); return; }
+      this.stopTimelapse();
+      const wrap = document.createElement('div');
+      wrap.className = 'tl-overlay'; wrap.id = 'tl-overlay';
+      wrap.innerHTML = `<div class="tl-bar">
+          <div class="tl-title">🎞️ Time-lapse · ${photos.length} foto</div>
+          <div class="tl-actions">
+            <button class="btn sm primary" data-action="tl-play">▶ Play</button>
+            <button class="btn sm" data-action="tl-close">✖ Chiudi</button>
+          </div>
+        </div>
+        <div class="tl-stage"><img id="tl-img" src="${photos[0].src}" alt="time-lapse"></div>
+        <div class="tl-cap" id="tl-cap">${U.fmtDate(photos[0].date, 'short')}</div>
+        <div class="tl-strip">${photos.map((p, i) => `<img src="${p.src}" data-action="tl-go" data-tl-idx="${i}" class="${i === 0 ? 'active' : ''}" alt="">`).join('')}</div>`;
+      document.body.appendChild(wrap);
+      this.tlPhotos = photos; this.tlIndex = 0; this.tlTimer = null;
+    },
+
+    toggleTimelapse() {
+      if (this.tlTimer) { clearInterval(this.tlTimer); this.tlTimer = null; const b = U.$('[data-action="tl-play"]'); if (b) b.textContent = '▶ Play'; return; }
+      const b = U.$('[data-action="tl-play"]'); if (b) b.textContent = '⏸ Pausa';
+      this.tlTimer = setInterval(() => { this.tlShow(this.tlIndex + 1); }, 900);
+    },
+
+    tlShow(idx) {
+      if (!this.tlPhotos || !this.tlPhotos.length) return;
+      this.tlIndex = (idx + this.tlPhotos.length) % this.tlPhotos.length;
+      const p = this.tlPhotos[this.tlIndex];
+      const img = U.$('#tl-img'); if (img) img.src = p.src;
+      const cap = U.$('#tl-cap'); if (cap) cap.textContent = U.fmtDate(p.date, 'short') + (p.time ? ' · ' + p.time : '');
+      U.$$('.tl-strip img').forEach((im, i) => { im.classList.toggle('active', i === this.tlIndex); });
+    },
+
+    stopTimelapse() {
+      if (this.tlTimer) { clearInterval(this.tlTimer); this.tlTimer = null; }
+      const el = U.$('#tl-overlay'); if (el) el.remove();
+    },
+
     /* ================= CRONOMETRO LUCE + REPORT ================= */
     updateLightClock() {
       const el = U.$('#light-elapsed');
@@ -1356,67 +1506,174 @@
     report() {
       const g = this.grow();
       if (!g) { U.toast('Nessuna coltivazione'); return; }
-      const cons = Store.consumption(g);
-      const ph = this.phaseInfo(g);
-      const S = Store.state.settings;
-      const r = [];
-      const push = (...c) => r.push(c.map(v => v == null ? '' : String(v)).join(';'));
-      push('GROW FAST & GROW BIG !! - Report coltivazione');
-      push('Generato', new Date().toLocaleString('it-IT'));
-      push('');
-      push('COLTIVAZIONE');
-      push('Nome', g.name);
-      push('Varieta', g.strain || '');
-      push('Genetica', g.genetics || '');
-      push('Inizio', g.startDate);
-      push('Giorno', U.dayNumber(g.startDate));
-      push('Fase', ph.phase);
-      push('Settimana', Advice.weekOf(g) + ' di ~' + this.totalWeeks());
-      push('Substrato', g.medium || '');
-      push('Vaso', g.potSize || '');
-      push('Area (cm)', (g.areaW && g.areaD) ? g.areaW + 'x' + g.areaD : '');
-      push('Piante', g.plants || '');
-      push('Tipo lampada', g.lampType || '');
-      push('Watt vegetativa', g.vegWatts || '');
-      push('Watt fioritura', g.flowerWatts || '');
-      push('');
-      push('ENERGIA (luce)');
-      push('Ore luce totali' + (cons.lightMeasured ? '' : ' (stima)'), U.fmt(cons.lightHours, 1));
-      push('Consumo (kWh)', U.fmt(cons.kWh, 2));
-      push('Tariffa (EUR/kWh)', U.fmt(S.energyCost, 3));
-      push('Costo energia (EUR)', U.fmt(cons.energyCost, 2));
-      push('');
-      push('ACQUA');
-      push('Litri totali', U.fmt(cons.liters, 1));
-      push('Tariffa (EUR/L)', U.fmt(S.waterCost, 4));
-      push('Costo acqua (EUR)', U.fmt(cons.waterCost, 2));
-      push('');
-      push('SPESE EXTRA');
-      push('Data', 'Descrizione', 'Importo (EUR)');
-      (g.expenses || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')).forEach(e => push(e.date, e.label, U.fmt(e.amount, 2)));
-      push('Totale spese (EUR)', U.fmt(cons.extraCost, 2));
-      push('');
-      push('COSTO TOTALE STIMATO (EUR)', U.fmt(cons.total, 2));
-      push('');
-      push('INTERVENTI');
-      push('Data', 'Ora', 'Tipo', 'Prodotto', 'Dose', 'pH', 'EC', 'Litri', 'Note');
-      Store.interventionsFor(g.id).slice().reverse().forEach(i => {
-        const type = (Store.INTERVENTION_TYPES.find(x => x.id === i.type) || {}).label || i.type;
-        const liters = (i.water != null) ? i.water : (/^[0-9]+([.,][0-9]+)?$/.test(String(i.amount || '')) ? i.amount : '');
-        push(i.date, i.time || '', type, i.product || '', i.amount || '', i.ph != null ? i.ph : '', i.ec != null ? i.ec : '', liters, (i.notes || '').replace(/;/g, ','));
-      });
-      push('');
-      push('NOTE GIORNALIERE');
-      push('Data', 'Ora', 'Salute', 'Note');
-      Store.entriesFor(g.id).slice().reverse().forEach(e => push(e.date, e.time || '', e.health + '/5', (e.notes || '').replace(/;/g, ',')));
-      const csv = '\ufeff' + r.join('\r\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      this.stopTimelapse();
+      const old = U.$('#report-overlay'); if (old) old.remove();
+      const wrap = document.createElement('div');
+      wrap.className = 'report-overlay'; wrap.id = 'report-overlay';
+      wrap.innerHTML = `
+        <div class="report-actions">
+          <button class="btn sm primary" data-action="report-print">🖨️ Stampa / PDF</button>
+          <button class="btn sm" data-action="report-html">⬇️ Salva HTML</button>
+          <button class="btn sm" data-action="export">💾 Backup JSON</button>
+          <button class="btn sm" data-action="report-close">✖ Chiudi</button>
+        </div>
+        <div class="report report-doc" id="report-body">${this.reportHTML(g)}</div>`;
+      document.body.appendChild(wrap);
+    },
+
+    reportClose() { const el = U.$('#report-overlay'); if (el) el.remove(); },
+
+    reportPrint() { try { window.print(); } catch (e) { U.toast('Stampa non disponibile su questo dispositivo'); } },
+
+    reportDownloadHTML() {
+      const g = this.grow(); if (!g) return;
+      const html = '<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">' +
+        '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+        '<title>GROW FAST &amp; GROW BIG !! - Report</title><style>' + this.reportStyles() + '</style></head>' +
+        '<body class="report-doc">' + this.reportHTML(g) + '</body></html>';
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'growfast-report-' + U.todayISO() + '.csv';
+      a.download = 'growfast-report-' + U.todayISO() + '.html';
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      U.toast('📄 Report scaricato');
+      U.toast('📄 Report HTML salvato');
+    },
+
+    reportStyles() {
+      return `
+        *{box-sizing:border-box}
+        body.report-doc{background:#fff;margin:0;padding:0}
+        .report{background:#fff;color:#111;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:22px;max-width:900px;margin:0 auto;font-size:13px;line-height:1.4}
+        .report h1{font-size:22px;margin:0 0 2px}
+        .report .sub{color:#666;font-size:12px;margin-bottom:8px}
+        .report h2{font-size:14px;margin:18px 0 8px;border-bottom:2px solid #37d67a;padding-bottom:4px;color:#0b1410;text-transform:uppercase;letter-spacing:.5px}
+        .report .kv2{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid #eee;padding:5px 0}
+        .report .kv2 span{color:#555}
+        .report table{width:100%;border-collapse:collapse;font-size:11.5px}
+        .report th,.report td{border:1px solid #ddd;padding:5px 6px;text-align:left;vertical-align:top}
+        .report th{background:#f2f7f4}
+        .report .rgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+        .report .rw{font-size:9px;text-align:center;color:#888;font-weight:700}
+        .report .rc{aspect-ratio:1;border:1px solid #eee;border-radius:4px;font-size:10px;display:flex;align-items:center;justify-content:center;color:#111}
+        .report .rc.empty{border:none}
+        .report .rmon{margin:12px 0 4px}
+        .report .rmon-t{font-weight:700;font-size:12px;text-transform:capitalize;margin-bottom:4px}
+        .report .cal-wrap{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+        .report .legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;margin-top:8px;color:#444}
+        .report .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px}
+        .report .gallery{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+        .report .gallery figure{margin:0}
+        .report .gallery img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;border:1px solid #ddd}
+        .report .gallery figcaption{font-size:10px;color:#666;text-align:center;margin-top:2px}
+        .report .rnote{border:1px solid #eee;border-radius:8px;padding:8px 10px;margin-bottom:8px}
+        .report .rnote-h{font-weight:700;font-size:12px;color:#0b1410;margin-bottom:3px}
+        .report .rnote-b{color:#333;white-space:pre-wrap}
+        .report .rg{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:6px}
+        .report .rg img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px}
+        @media print{ .report{max-width:none;padding:0} @page{margin:12mm} }
+      `;
+    },
+
+    reportCalendarHTML(g) {
+      const start = U.isoToDate(g.startDate);
+      const now = new Date();
+      let y = start.getFullYear(), m = start.getMonth();
+      let out = '', guard = 0;
+      while ((y < now.getFullYear() || (y === now.getFullYear() && m <= now.getMonth())) && guard++ < 40) {
+        out += this.reportMonthHTML(g, y, m);
+        m++; if (m > 11) { m = 0; y++; }
+      }
+      return out;
+    },
+
+    reportMonthHTML(g, y, m) {
+      const first = new Date(y, m, 1);
+      const days = new Date(y, m + 1, 0).getDate();
+      const offset = (first.getDay() + 6) % 7;
+      const withNote = {};
+      Store.entriesFor(g.id).forEach(e => { withNote[e.date] = true; });
+      let cells = '';
+      for (let i = 0; i < offset; i++) cells += '<div class="rc empty"></div>';
+      for (let d = 1; d <= days; d++) {
+        const iso = U.dateToISO(new Date(y, m, d));
+        const stage = Store.stageForDate(g, iso);
+        const bg = stage ? `background:${this.colorFor(stage)}` : 'background:#f4f4f4';
+        const dot = withNote[iso] ? '<span style="font-size:8px">●</span>' : '';
+        cells += `<div class="rc" style="${bg}" title="${iso} ${stage || ''}">${d}${dot}</div>`;
+      }
+      const name = first.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+      const wd = ['L', 'M', 'M', 'G', 'V', 'S', 'D'].map(x => `<div class="rw">${x}</div>`).join('');
+      return `<div class="rmon"><div class="rmon-t">${U.esc(name)}</div><div class="rgrid">${wd}${cells}</div></div>`;
+    },
+
+    reportHTML(g) {
+      const cons = Store.consumption(g);
+      const lt = this.lightToday(g);
+      const ph = this.phaseInfo(g);
+      const info = g.strainInfo || {};
+      const day = U.dayNumber(g.startDate);
+      const usedStages = [...new Set(((g.stageLog && g.stageLog.length) ? g.stageLog : [{ stage: g.stage }]).map(s => s.stage))];
+      const legend = usedStages.map(sid => { const st = Store.STAGES.find(x => x.id === sid) || {}; return `<span><i style="background:${this.colorFor(sid)}"></i>${U.esc(st.label || sid)}</span>`; }).join('') + '<span><i style="background:#37d67a;border-radius:50%"></i>nota/foto</span>';
+
+      const setupRows = [
+        ['Nome', g.name], ['Varietà', g.strain], ['Genetica', g.genetics], ['Inizio', U.fmtDate(g.startDate)],
+        ['Giorno', day + ' · ' + ph.phase], ['Settimana', Advice.weekOf(g) + ' di ~' + this.totalWeeks()],
+        ['Substrato', g.medium], ['Vaso', g.potSize],
+        ['Area', (g.areaW && g.areaD) ? g.areaW + '×' + g.areaD + ' cm (' + U.fmt(g.areaW * g.areaD / 10000, 2) + ' m²)' : ''],
+        ['Piante', g.plants], ['Tipo lampada', g.lampType],
+        ['Watt vegetativa', g.vegWatts ? g.vegWatts + ' W' : ''], ['Watt fioritura', g.flowerWatts ? g.flowerWatts + ' W' : '']
+      ].filter(r => r[1] != null && r[1] !== '').map(r => `<div class="kv2"><span>${U.esc(r[0])}</span><b>${U.esc(String(r[1]))}</b></div>`).join('');
+
+      const strain = this.strainFields().filter(([k]) => info[k]).map(([k, label]) => `<div class="kv2"><span>${U.esc(label)}</span><b>${U.esc(info[k])}</b></div>`).join('');
+
+      const ints = Store.interventionsFor(g.id).slice().reverse().map(i => {
+        const type = (Store.INTERVENTION_TYPES.find(x => x.id === i.type) || {}).label || i.type;
+        const liters = (i.water != null) ? i.water : (/^[0-9]+([.,][0-9]+)?$/.test(String(i.amount || '')) ? i.amount : '');
+        return `<tr><td>${U.fmtDate(i.date, 'short')}</td><td>${i.time || ''}</td><td>${U.esc(type)}</td><td>${U.esc(i.product || '')}</td><td>${U.esc(i.amount || '')}</td><td>${i.ph != null ? U.fmt(i.ph, 1) : ''}</td><td>${i.ec != null ? U.fmt(i.ec, 2) : ''}</td><td>${liters !== '' ? U.fmt(liters, 1) + ' L' : ''}</td><td>${U.esc(i.notes || '')}</td></tr>`;
+      }).join('');
+
+      const expenses = (g.expenses || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(e => `<tr><td>${U.fmtDate(e.date, 'short')}</td><td>${U.esc(e.label)}</td><td>${U.fmt(e.amount, 2)} €</td></tr>`).join('');
+
+      const notes = Store.entriesFor(g.id).slice().reverse().map(e => {
+        const imgs = (e.photos || []).map(p => `<img src="${p}" alt="">`).join('');
+        return `<div class="rnote"><div class="rnote-h">${U.fmtDate(e.date, 'short')}${e.time ? ' · ' + e.time : ''} · salute ${e.health}/5</div>${e.notes ? `<div class="rnote-b">${U.esc(e.notes)}</div>` : ''}${imgs ? `<div class="rg">${imgs}</div>` : ''}</div>`;
+      }).join('');
+
+      const photos = this.photoList();
+      const gallery = photos.map(p => `<figure><img src="${p.src}" alt=""><figcaption>${U.fmtDate(p.date, 'short')}</figcaption></figure>`).join('');
+
+      return `
+        <h1>🌿 GROW FAST &amp; GROW BIG !!</h1>
+        <div class="sub">Report coltivazione · ${U.esc(g.name)}${g.strain ? ' — ' + U.esc(g.strain) : ''} · dal ${U.fmtDate(g.startDate)} al ${U.fmtDate(U.todayISO())} (giorno ${day})</div>
+
+        <h2>Impostazione coltivazione</h2>
+        ${setupRows}
+
+        ${strain ? `<h2>Scheda tecnica varietà</h2>${strain}` : ''}
+
+        <h2>Consumi &amp; Costi</h2>
+        <div class="kv2"><span>Ore di luce ON totali ${cons.lightMeasured ? '(misurate)' : '(dal timer)'}</span><b>${U.fmt(cons.lightHours, 1)} h</b></div>
+        <div class="kv2"><span>Energia · ${U.fmt(Store.state.settings.energyCost, 3)} €/kWh</span><b>${U.fmt(cons.kWh, 2)} kWh · ${U.fmt(cons.energyCost, 2)} €</b></div>
+        <div class="kv2"><span>Timer (oggi ON / OFF)</span><b>${U.fmt(lt.on, 1)} h ON / ${U.fmt(24 - lt.on, 1)} h OFF</b></div>
+        <div class="kv2"><span>Acqua · ${U.fmt(Store.state.settings.waterCost, 4)} €/L</span><b>${U.fmt(cons.liters, 1)} L · ${U.fmt(cons.waterCost, 2)} €</b></div>
+        <div class="kv2"><span>Spese extra</span><b>${U.fmt(cons.extraCost, 2)} €</b></div>
+        <div class="kv2" style="font-size:15px"><span><b>COSTO TOTALE</b></span><b>${U.fmt(cons.total, 2)} €</b></div>
+
+        <h2>Calendario coltivazione (dall'inizio ad oggi)</h2>
+        <div class="cal-wrap">${this.reportCalendarHTML(g)}</div>
+        <div class="legend">${legend}</div>
+
+        ${gallery ? `<h2>Foto / Time-lapse (${photos.length})</h2><div class="gallery">${gallery}</div>` : ''}
+
+        <h2>Interventi (${Store.interventionsFor(g.id).length})</h2>
+        <table><thead><tr><th>Data</th><th>Ora</th><th>Tipo</th><th>Prodotto</th><th>Dose</th><th>pH</th><th>EC</th><th>Litri</th><th>Note</th></tr></thead><tbody>${ints || '<tr><td colspan="9">Nessun intervento</td></tr>'}</tbody></table>
+
+        ${expenses ? `<h2>Spese extra</h2><table><thead><tr><th>Data</th><th>Descrizione</th><th>Importo</th></tr></thead><tbody>${expenses}</tbody></table>` : ''}
+
+        <h2>Note giornaliere (${Store.entriesFor(g.id).length})</h2>
+        ${notes || '<div>Nessuna nota</div>'}
+      `;
     },
 
     /* ================= FORM: SPESA ================= */
