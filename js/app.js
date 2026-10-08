@@ -29,6 +29,7 @@
     screen: 'home',
     ICONS,
     diaryMode: 'list',   // 'list' | 'calendar'
+    paramsPeriod: 'giorno', // 'giorno' | 'notte'
     calY: null,          // anno del calendario mostrato (null = mese corrente)
     calM: null,          // mese del calendario (0-11)
 
@@ -167,9 +168,7 @@
       const stages = Store.STAGES;
       const idx = stages.findIndex(s => s.id === g.stage);
       const day = U.dayNumber(g.startDate);
-      const tip = Advice.dailyTip(g);
       const alerts = Alerts.compute(g);
-      const last = Live.value || Store.latestReading(g.id);
       const ph = this.phaseInfo(g);
       const curWeek = Math.max(1, Advice.weekOf(g));
       const totalWeeks = this.totalWeeks();
@@ -221,6 +220,24 @@
           <button class="qbtn" data-action="add-intervention"><span class="qi">🔧</span><span>Intervento</span></button>
         </div>
 
+        <div class="section-title">💡 Consiglio del giorno</div>
+        <div class="card">${this.adviceList(g)}</div>
+
+        <div class="section-title">🕘 Ultime attività</div>
+        ${this.recentActivity(g)}
+
+        <div class="section-title">Parametri <span class="badge-live ${Live.mode === 'off' ? 'off' : ''}"><span class="dot"></span>${Live.mode === 'off' ? 'offline' : Live.mode}</span></div>
+        <div class="seg" style="margin-bottom:10px">
+          <button class="${this.paramsPeriod === 'giorno' ? 'active' : ''}" data-action="params-period" data-period="giorno">☀️ Giorno</button>
+          <button class="${this.paramsPeriod === 'notte' ? 'active' : ''}" data-action="params-period" data-period="notte">🌙 Notte</button>
+        </div>
+        <div class="grid grid-2 wide" id="home-kpis">${this.homeKpisHTML(g)}</div>
+        <div class="hint mt8">Scegli ☀️ Giorno o 🌙 Notte: ogni lettura è salvata nel suo momento e la ritrovi nel report.</div>
+        <div class="row-btns mt12">
+          <button class="btn primary sm" data-action="quick-reading">＋ Lettura ${this.paramsPeriod === 'notte' ? 'notte' : 'giorno'}</button>
+          <button class="btn sm" data-action="go" data-screen="live">📡 Live</button>
+        </div>
+
         <div class="section-title">Fase & Lampada</div>
         <div class="card">
           <div class="field" style="margin-bottom:10px"><label>Fase attuale (toccane una)</label>
@@ -242,6 +259,15 @@
             <div class="field"><label>Timer vegetativa (h/giorno)</label><input class="input" type="number" inputmode="numeric" data-action="grow-field" data-field="schedule.vegHours" value="${U.numStr(g.schedule.vegHours)}"></div>
             <div class="field"><label>Timer fioritura (h/giorno)</label><input class="input" type="number" inputmode="numeric" data-action="grow-field" data-field="schedule.flowerHours" value="${U.numStr(g.schedule.flowerHours)}"></div>
           </div>
+          <div class="field-row">
+            <div class="field"><label>Veg · ON</label><input class="input" type="time" data-action="grow-field" data-field="schedule.vegOn" value="${U.esc(g.schedule.vegOn || '')}"></div>
+            <div class="field"><label>Veg · OFF</label><input class="input" type="time" data-action="grow-field" data-field="schedule.vegOff" value="${U.esc(g.schedule.vegOff || '')}"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>Fioritura · ON</label><input class="input" type="time" data-action="grow-field" data-field="schedule.flowerOn" value="${U.esc(g.schedule.flowerOn || '')}"></div>
+            <div class="field"><label>Fioritura · OFF</label><input class="input" type="time" data-action="grow-field" data-field="schedule.flowerOff" value="${U.esc(g.schedule.flowerOff || '')}"></div>
+          </div>
+          <div class="hint">Orari accensione/spegnimento: vengono salvati nel report e usati nei consigli del giorno. Se li lasci vuoti il timer conta solo le ore/giorno.</div>
           <div class="toggle-row" style="padding-top:10px">
             <div>
               <div class="t-title">${cons.lightOn ? '💡 Luce ACCESA' : '🌑 Luce spenta'}</div>
@@ -278,26 +304,6 @@
         <div class="section-title">Alert <span class="mute2">${alerts.filter(a => a.level !== 'ok').length}</span></div>
         ${alerts.slice(0, 4).map(a => this.alertHTML(a)).join('')}
 
-        <div class="section-title">Parametri <span class="badge-live ${Live.mode === 'off' ? 'off' : ''}"><span class="dot"></span>${Live.mode === 'off' ? 'offline' : Live.mode}</span></div>
-        <div class="grid grid-2 wide" id="home-kpis">
-          ${this.kpiHTML('Temperatura', last && last.temp, '°C', t.tempD, 1)}
-          ${this.kpiHTML('Umidità', last && last.rh, '%', t.rh, 0)}
-          ${this.kpiHTML('VPD', last && last.vpd, 'kPa', t.vpd, 2)}
-          ${this.kpiHTML('pH', last && last.ph, '', t.phSoil, 1)}
-        </div>
-        <div class="row-btns mt12">
-          <button class="btn primary sm" data-action="go" data-screen="live">📡 Vai al Live</button>
-          <button class="btn sm" data-action="quick-reading">＋ Lettura manuale</button>
-        </div>
-
-        <div class="section-title">Consiglio del giorno</div>
-        <div class="card">
-          <div class="flex gap12 aic"><div style="font-size:30px">${tip.icon}</div><div><div style="font-weight:800">${U.esc(tip.title)}</div><div class="muted" style="font-size:13.5px;margin-top:4px">${U.esc(tip.text)}</div></div></div>
-        </div>
-
-        <div class="section-title">Ultime attività</div>
-        ${this.recentActivity(g)}
-
         ${this.configHTML(g)}
       </div>`;
     },
@@ -318,6 +324,34 @@
         <div class="k-target">target ${targetTxt}${unit ? ' ' + unit : ''}</div>
         <div class="k-bar"><i style="width:${has ? pct : 0}%"></i></div>
       </div>`;
+    },
+
+    homeKpisHTML(g) {
+      const t = this.target();
+      const p = this.paramsPeriod || 'giorno';
+      const r = Store.latestReading(g.id, p) || {};
+      const tempRange = (p === 'notte') ? t.tempN : t.tempD;
+      return this.kpiHTML((p === 'notte' ? '🌙 Temperatura notte' : '☀️ Temperatura giorno'), r.temp, '°C', tempRange, 1) +
+        this.kpiHTML('Umidità ' + p, r.rh, '%', t.rh, 0) +
+        this.kpiHTML('VPD', r.vpd, 'kPa', t.vpd, 2) +
+        this.kpiHTML('pH', r.ph, '', t.phSoil, 1);
+    },
+
+    adviceList(g) {
+      const wd = Store.lastInterventionDate('irrigazione');
+      const fd = Store.lastInterventionDate('nutrizione');
+      const ctx = {
+        week: Advice.weekOf(g),
+        reading: Store.latestReading(g.id, this.paramsPeriod) || Store.latestReading(g.id),
+        daysSinceWater: wd ? U.daysBetween(wd, U.todayISO()) : null,
+        daysSinceFeed: fd ? U.daysBetween(fd, U.todayISO()) : null
+      };
+      const list = Advice.dailyAdvice(g, ctx);
+      if (!list.length) return '<div class="muted center">Nessun consiglio per oggi.</div>';
+      return list.map(a => `<div class="adv-item">
+        <div class="adv-ic">${a.icon}</div>
+        <div><div class="adv-tt">${U.esc(a.title)}</div><div class="adv-ds">${U.esc(a.text)}</div></div>
+      </div>`).join('');
     },
 
     alertHTML(a) {
@@ -618,13 +652,14 @@
         <div class="section-title">⚙️ Preferenze</div>
         <div class="card">
           <div class="field-row">
-            <div class="field"><label>Δ foglia (VPD) °C</label><input class="input" type="number" step="0.5" id="set-leaf" value="${U.numStr(Store.state.settings.leafOffset, 1)}" data-action="setting" data-key="leafOffset"></div>
+            <div class="field"><label>Δ foglia − aria (°C)</label><input class="input" type="number" step="0.5" id="set-leaf" value="${U.numStr(Store.state.settings.leafOffset, 1)}" data-action="setting" data-key="leafOffset"></div>
             <div class="field"><label>Intervallo live (s)</label><input class="input" type="number" inputmode="numeric" id="set-live" value="${Store.state.settings.liveInterval}" data-action="setting" data-key="liveInterval"></div>
           </div>
           <div class="toggle-row">
             <div><div class="t-title">Notifiche alert</div><div class="t-sub">Avvisi su parametri critici e task</div></div>
             <label class="switch"><input type="checkbox" data-action="toggle-setting" data-key="notifications" ${Store.state.settings.notifications ? 'checked' : ''}><span class="slider"></span></label>
           </div>
+          <div class="hint">Δ foglia = differenza tra la temperatura della foglia e quella dell’aria: traspirando, le foglie sono di norma 1–3 °C più fredde. Serve a calcolare il VPD corretto (default 2 °C).</div>
         </div>
       </div>`;
     },
@@ -688,10 +723,8 @@
         });
       }
       const homeKpis = U.$('#home-kpis');
-      if (homeKpis) homeKpis.innerHTML = this.kpiHTML('Temperatura', last.temp, '°C', t.tempD, 1) +
-        this.kpiHTML('Umidità', last.rh, '%', t.rh, 0) +
-        this.kpiHTML('VPD', last.vpd, 'kPa', t.vpd, 2) +
-        this.kpiHTML('pH', last.ph, '', t.phSoil, 1);
+      const gh = this.grow();
+      if (homeKpis && gh) homeKpis.innerHTML = this.homeKpisHTML(gh);
     },
 
     liveOrLast() {
@@ -765,7 +798,8 @@
             <div class="field"><label>Temp aria °C</label><input class="input" type="number" inputmode="decimal" id="calc-vpd-t" value="${U.numStr(last.temp != null ? last.temp : 25, 1)}" data-action="calc"></div>
             <div class="field"><label>UR %</label><input class="input" type="number" inputmode="decimal" id="calc-vpd-rh" value="${U.numStr(last.rh != null ? last.rh : 60, 0)}" data-action="calc"></div>
           </div>
-          <div class="field"><label>Δ foglia (°C)</label><input class="input" type="number" inputmode="decimal" id="calc-vpd-off" value="${U.numStr(Store.state.settings.leafOffset, 1)}" data-action="calc"></div>
+          <div class="field"><label>Δ foglia − aria (°C)</label><input class="input" type="number" inputmode="decimal" id="calc-vpd-off" value="${U.numStr(Store.state.settings.leafOffset, 1)}" data-action="calc"></div>
+          <div class="hint" style="margin:-2px 0 12px">Differenza tra la temperatura della foglia e quella dell’aria (le foglie sono ~1–3 °C più fredde per la traspirazione): serve a calcolare il VPD fogliare.</div>
           <div class="card" style="background:var(--surface-2);box-shadow:none">
             <div class="flex between aic"><span class="muted">VPD stimato</span><b class="mono" id="out-vpd" style="font-size:20px">—</b></div>
             <div class="hint mt8" id="out-vpd-hint"></div>
@@ -946,6 +980,7 @@
         case 'day-add-int': this.interventionForm(null, 'irrigazione', el.dataset.date); break;
         case 'quick': this.quickAction(el.dataset.kind); break;
         case 'quick-reading': this.readingForm(false); break;
+        case 'params-period': this.paramsPeriod = (el.dataset.period === 'notte' ? 'notte' : 'giorno'); this.render(); break;
         case 'save-reading': if (Live.value) { Live.saveCurrent(); this.render(); } else { this.readingForm(false); } break;
         case 'live-sim': if (Live.mode === 'sim') { Live.stop(); } else { Live.startSim(); U.toast('▶ Simulazione attiva'); } this.render(); break;
         case 'live-remote': if (Live.mode === 'remote') { Live.stop(); this.render(); } else { const r = Store.state.settings.remote; if (!r.url) { U.toast('Configura prima l’URL WebSocket nella sezione Controllo remoto (in fondo alla Home)'); this.go('home'); } else { Live.startRemote(r.url, r.room, r.token); this.go('live'); } } break;
@@ -1077,6 +1112,14 @@
         <div class="field-row">
           <div class="field"><label>Ore luce vegetativa</label><input class="input" type="number" data-field="vegHours" value="${g.schedule ? g.schedule.vegHours : 18}"></div>
           <div class="field"><label>Ore luce fioritura</label><input class="input" type="number" data-field="flowerHours" value="${g.schedule ? g.schedule.flowerHours : 12}"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Veg · ON</label><input class="input" type="time" data-field="vegOn" value="${U.esc((g.schedule && g.schedule.vegOn) || '')}"></div>
+          <div class="field"><label>Veg · OFF</label><input class="input" type="time" data-field="vegOff" value="${U.esc((g.schedule && g.schedule.vegOff) || '')}"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Fioritura · ON</label><input class="input" type="time" data-field="flowerOn" value="${U.esc((g.schedule && g.schedule.flowerOn) || '')}"></div>
+          <div class="field"><label>Fioritura · OFF</label><input class="input" type="time" data-field="flowerOff" value="${U.esc((g.schedule && g.schedule.flowerOff) || '')}"></div>
         </div>`;
       this.openModal(isNew ? 'Nuova coltivazione' : 'Modifica coltivazione', body, {
         confirmLabel: isNew ? 'Crea' : 'Salva',
@@ -1087,7 +1130,11 @@
             areaW: U.num(d.areaW), areaD: U.num(d.areaD), plants: U.num(d.plants) || 1,
             lampType: d.lampType, vegWatts: U.num(d.vegWatts), flowerWatts: U.num(d.flowerWatts),
             light: d.light,
-            schedule: { vegHours: U.num(d.vegHours) || 18, flowerHours: U.num(d.flowerHours) || 12 }
+            schedule: {
+              vegHours: U.num(d.vegHours) || 18, flowerHours: U.num(d.flowerHours) || 12,
+              vegOn: d.vegOn || '', vegOff: d.vegOff || '',
+              flowerOn: d.flowerOn || '', flowerOff: d.flowerOff || ''
+            }
           };
           if (isNew) { Store.addGrow(patch); U.toast('🌱 Coltivazione creata'); }
           else { Store.updateGrow(g.id, patch); U.toast('Salvato'); }
@@ -1259,8 +1306,17 @@
     /* ================= FORM: LETTURA PARAMETRI ================= */
     readingForm(fromLive) {
       if (!this.grow()) { U.toast('Crea prima una coltivazione'); return; }
-      const src = (fromLive && Live.value) ? Live.value : (this.liveOrLast() || {});
+      const g = this.grow();
+      const period = this.paramsPeriod || 'giorno';
+      const src = (fromLive && Live.value) ? Live.value : ((Store.latestReading(g.id, period)) || this.liveOrLast() || {});
       const body = `
+        <div class="field"><label>Momento della giornata</label>
+          <div class="chip-group">
+            <button type="button" class="chip ${period === 'giorno' ? 'active' : ''}" data-set-period="giorno">☀️ Giorno</button>
+            <button type="button" class="chip ${period === 'notte' ? 'active' : ''}" data-set-period="notte">🌙 Notte</button>
+          </div>
+          <div class="hint mt8">Di giorno e di notte i parametri cambiano: salva due letture separate e le ritrovi nel report.</div>
+        </div>
         <div class="field-row">
           <div class="field"><label>Temperatura °C</label><input class="input" type="number" inputmode="decimal" data-field="temp" value="${U.numStr(src.temp, 1)}"></div>
           <div class="field"><label>Umidità %</label><input class="input" type="number" inputmode="decimal" data-field="rh" value="${U.numStr(src.rh, 0)}"></div>
@@ -1277,12 +1333,14 @@
           <div class="field"><label>CO₂ ppm</label><input class="input" type="number" inputmode="decimal" data-field="co2" value="${U.numStr(src.co2, 0)}"></div>
           <div class="field"><label>Temp acqua °C</label><input class="input" type="number" inputmode="decimal" data-field="waterTemp" value="${U.numStr(src.waterTemp, 0)}"></div>
         </div>
+        <input type="hidden" data-field="period" id="read-period" value="${period}">
         <div class="hint">Se lasci il VPD vuoto viene calcolato automaticamente da temperatura e umidità.</div>`;
       this.openModal('Lettura parametri', body, {
         confirmLabel: 'Salva lettura',
         onConfirm: (d) => {
           Store.addReading({
             date: U.todayISO(), source: 'manual',
+            period: (d.period === 'notte' ? 'notte' : 'giorno'),
             temp: U.num(d.temp), rh: U.num(d.rh), vpd: U.num(d.vpd),
             ph: U.num(d.ph), ec: U.num(d.ec), ppfd: U.num(d.ppfd),
             co2: U.num(d.co2), waterTemp: U.num(d.waterTemp)
@@ -1290,6 +1348,13 @@
           this.render(); U.toast('📈 Lettura salvata');
         }
       });
+      const rModal = U.$('.modal-backdrop');
+      if (rModal) rModal.querySelectorAll('[data-set-period]').forEach(b => b.addEventListener('click', () => {
+        const hid = rModal.querySelector('#read-period');
+        if (hid) hid.value = b.dataset.setPeriod;
+        rModal.querySelectorAll('[data-set-period]').forEach(x => x.classList.toggle('active', x === b));
+        this.paramsPeriod = b.dataset.setPeriod;
+      }));
     },
 
     /* ================= FORM: ACQUA (al volo) ================= */
@@ -1643,9 +1708,10 @@
     },
 
     reportDayByDay(g) {
-      const byE = {}, byI = {};
+      const byE = {}, byI = {}, byR = {};
       Store.entriesFor(g.id).forEach(e => { (byE[e.date] = byE[e.date] || []).push(e); });
       Store.interventionsFor(g.id).forEach(i => { (byI[i.date] = byI[i.date] || []).push(i); });
+      Store.readingsFor(g.id).forEach(r => { (byR[r.date] = byR[r.date] || []).push(r); });
       const today = U.todayISO();
       let out = '';
       for (let iso = g.startDate; U.daysBetween(iso, today) >= 0; iso = U.addDays(iso, 1)) {
@@ -1657,17 +1723,31 @@
         const wl = this.waterLitersForDate(g, iso);
         const evs = byE[iso] || [];
         const ivs = byI[iso] || [];
+        const rs = byR[iso] || [];
         const imgs = evs.reduce((a, e) => a.concat(e.photos || []), []);
         const notes = evs.filter(e => e.notes).map(e => U.esc(e.notes)).join('<br>');
+        const rsHtml = ['giorno', 'notte'].map(p => {
+          const r = rs.filter(x => (x.period || 'giorno') === p).slice(-1)[0];
+          if (!r) return '';
+          const parts = [];
+          if (r.temp != null) parts.push('🌡️ ' + U.fmt(r.temp, 1) + ' °C');
+          if (r.rh != null) parts.push('💧 ' + U.fmt(r.rh, 0) + ' %');
+          if (r.vpd != null) parts.push('VPD ' + U.fmt(r.vpd, 2) + ' kPa');
+          if (r.ph != null) parts.push('pH ' + U.fmt(r.ph, 2));
+          if (r.ec != null) parts.push('EC ' + U.fmt(r.ec, 2));
+          if (r.ppfd != null) parts.push('PPFD ' + U.fmt(r.ppfd, 0));
+          return `<div class="rday-read"><span class="t">${p === 'notte' ? '🌙 Notte' : '☀️ Giorno'}</span><span>${U.esc(parts.join(' · '))}</span></div>`;
+        }).join('');
         const ivHtml = ivs.map(i => {
           const type = (Store.INTERVENTION_TYPES.find(x => x.id === i.type) || {}).label || i.type;
           const det = [i.product, i.amount, i.ph != null ? 'pH ' + U.fmt(i.ph, 1) : '', i.ec != null ? 'EC ' + U.fmt(i.ec, 2) : '', (i.water != null ? U.fmt(i.water, 1) + ' L' : '')].filter(Boolean).join(' · ');
           return `<div class="rday-int"><span class="t">${i.time || ''}</span><span>🔧 <b>${U.esc(type)}</b>${det ? ' — ' + U.esc(det) : ''}${i.notes ? ' · ' + U.esc(i.notes) : ''}</span></div>`;
         }).join('');
-        const hasContent = notes || ivHtml || imgs.length;
+        const hasContent = notes || ivHtml || imgs.length || rsHtml;
         out += `<div class="rday" style="border-left-color:${color}">
             <div class="rday-h">${U.esc(U.fmtDate(iso))}${st ? ' · ' + U.esc(st.label) : ''} <span class="rday-n">· giorno ${day}</span></div>
             <div class="rday-kpis">${lh > 0 ? `<span>💡 <b>${U.fmt(lh, 1)} h</b> luce</span>` : ''}${wl > 0 ? `<span>💧 <b>${U.fmt(wl, 1)} L</b> acqua</span>` : ''}${ivs.length ? `<span>🔧 <b>${ivs.length}</b> interventi</span>` : ''}</div>
+            ${rsHtml}
             ${notes ? `<div class="rday-body">${notes}</div>` : ''}
             ${ivHtml}
             ${imgs.length ? `<div class="rg">${imgs.map(p => `<img src="${p}" alt="">`).join('')}</div>` : ''}
@@ -1692,7 +1772,9 @@
         ['Substrato', g.medium], ['Vaso', g.potSize],
         ['Area', (g.areaW && g.areaD) ? g.areaW + '×' + g.areaD + ' cm (' + U.fmt(g.areaW * g.areaD / 10000, 2) + ' m²)' : ''],
         ['Piante', g.plants], ['Tipo lampada', g.lampType],
-        ['Watt vegetativa', g.vegWatts ? g.vegWatts + ' W' : ''], ['Watt fioritura', g.flowerWatts ? g.flowerWatts + ' W' : '']
+        ['Watt vegetativa', g.vegWatts ? g.vegWatts + ' W' : ''], ['Watt fioritura', g.flowerWatts ? g.flowerWatts + ' W' : ''],
+        ['Timer vegetativa', (g.schedule && g.schedule.vegHours ? g.schedule.vegHours : 18) + ' h/giorno' + ((g.schedule && (g.schedule.vegOn || g.schedule.vegOff)) ? ` · ON ${g.schedule.vegOn || '—'}${g.schedule.vegOff ? ' → OFF ' + g.schedule.vegOff : ''}` : '')],
+        ['Timer fioritura', (g.schedule && g.schedule.flowerHours ? g.schedule.flowerHours : 12) + ' h/giorno' + ((g.schedule && (g.schedule.flowerOn || g.schedule.flowerOff)) ? ` · ON ${g.schedule.flowerOn || '—'}${g.schedule.flowerOff ? ' → OFF ' + g.schedule.flowerOff : ''}` : '')]
       ].filter(r => r[1] != null && r[1] !== '').map(r => `<div class="kv2"><span>${U.esc(r[0])}</span><b>${U.esc(String(r[1]))}</b></div>`).join('');
 
       const strain = this.strainFields().filter(([k]) => info[k]).map(([k, label]) => `<div class="kv2"><span>${U.esc(label)}</span><b>${U.esc(info[k])}</b></div>`).join('');
@@ -1721,6 +1803,7 @@
         <div class="kv2"><span>Ore di luce ON totali ${cons.lightMeasured ? '(misurate)' : '(dal timer)'}</span><b>${U.fmt(cons.lightHours, 1)} h</b></div>
         <div class="kv2"><span>Energia · ${U.fmt(Store.state.settings.energyCost, 3)} €/kWh</span><b>${U.fmt(cons.kWh, 2)} kWh · ${U.fmt(cons.energyCost, 2)} €</b></div>
         <div class="kv2"><span>Timer (oggi ON / OFF)</span><b>${U.fmt(lt.on, 1)} h ON / ${U.fmt(24 - lt.on, 1)} h OFF</b></div>
+        ${(g.schedule && (g.schedule.vegOn || g.schedule.vegOff || g.schedule.flowerOn || g.schedule.flowerOff)) ? `<div class="kv2"><span>Orari accensione/spegnimento</span><b>Veg ${g.schedule.vegOn || '—'} → ${g.schedule.vegOff || '—'} · Fior. ${g.schedule.flowerOn || '—'} → ${g.schedule.flowerOff || '—'}</b></div>` : ''}
         <div class="kv2"><span>Acqua · ${U.fmt(Store.state.settings.waterCost, 4)} €/L</span><b>${U.fmt(cons.liters, 1)} L · ${U.fmt(cons.waterCost, 2)} €</b></div>
         <div class="kv2"><span>Spese extra</span><b>${U.fmt(cons.extraCost, 2)} €</b></div>
         <div class="kv2" style="font-size:15px"><span><b>COSTO TOTALE</b></span><b>${U.fmt(cons.total, 2)} €</b></div>

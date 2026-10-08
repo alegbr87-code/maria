@@ -121,7 +121,7 @@
         vegWatts: null,    // W in vegetativa
         flowerWatts: null, // W in fioritura
         light: '',         // note libere sulla lampada
-        schedule: { vegHours: 18, flowerHours: 12 },
+        schedule: { vegHours: 18, flowerHours: 12, vegOn: '', vegOff: '', flowerOn: '', flowerOff: '' },
         stageLog: [],
         expenses: [],      // spese extra: { id, date, label, amount }
         light: { on: false, since: null, log: [] }, // registro accensione luce: {start,end,watts}
@@ -129,7 +129,7 @@
         archived: false,
         createdAt: new Date().toISOString()
       }, data || {});
-      g.schedule = Object.assign({ vegHours: 18, flowerHours: 12 }, g.schedule || {});
+      g.schedule = Object.assign({ vegHours: 18, flowerHours: 12, vegOn: '', vegOff: '', flowerOn: '', flowerOff: '' }, g.schedule || {});
       g.stageLog = Array.isArray(g.stageLog) && g.stageLog.length
         ? g.stageLog
         : [{ stage: g.stage, date: g.startDate }];
@@ -385,7 +385,8 @@
         id: U.uid('read'),
         growId: g ? g.id : null,
         ts: new Date().toISOString(),
-        source: 'manual'
+        source: 'manual',
+        period: 'giorno'   // 'giorno' | 'notte'
       }, data || {});
       if (r.temp != null && r.rh != null && r.vpd == null) {
         r.vpd = U.vpd(r.temp, r.rh, (this.state.settings || {}).leafOffset);
@@ -410,8 +411,9 @@
         .sort((a, b) => a.ts.localeCompare(b.ts));
     },
 
-    latestReading(growId) {
-      const list = this.readingsFor(growId);
+    latestReading(growId, period) {
+      let list = this.readingsFor(growId);
+      if (period) list = list.filter(r => (r.period || 'giorno') === period);
       return list.length ? list[list.length - 1] : null;
     },
 
@@ -460,7 +462,7 @@
         areaW: 80, areaD: 80, plants: 2,
         lampType: 'LED', vegWatts: 120, flowerWatts: 240,
         light: 'LED Quantum Board 240W dimmerabile',
-        schedule: { vegHours: 18, flowerHours: 12 },
+        schedule: { vegHours: 18, flowerHours: 12, vegOn: '06:00', vegOff: '00:00', flowerOn: '08:00', flowerOff: '20:00' },
         stageLog: [
           { stage: 'germinazione', date: U.addDays(U.todayISO(), -28) },
           { stage: 'piantina', date: U.addDays(U.todayISO(), -24) },
@@ -470,15 +472,12 @@
       const base = U.addDays(U.todayISO(), -6);
       for (let i = 0; i < 6; i++) {
         const d = U.addDays(base, i);
-        const t = 24.5 + Math.sin(i) * 1.2;
-        const rh = 58 - i * 1.5;
-        this.state.readings.push({
-          id: U.uid('read'), growId: g.id,
-          ts: new Date(d + 'T09:00:00').toISOString(), date: d,
-          temp: U.round(t, 1), rh: U.round(rh, 0), vpd: U.vpd(t, rh, 2),
-          ph: U.round(6.1 + (i % 3) * 0.05, 2), ec: U.round(1.3 + i * 0.03, 2),
-          ppfd: 420, co2: 500, source: 'demo'
-        });
+        const tD = 24.5 + Math.sin(i) * 1.2, rhD = 58 - i * 1.5;
+        const tN = 20.5 + Math.sin(i) * 0.8, rhN = 64 - i * 1.2;
+        this.state.readings.push(
+          { id: U.uid('read'), growId: g.id, ts: new Date(d + 'T09:00:00').toISOString(), date: d, period: 'giorno', temp: U.round(tD, 1), rh: U.round(rhD, 0), vpd: U.vpd(tD, rhD, 2), ph: U.round(6.1 + (i % 3) * 0.05, 2), ec: U.round(1.3 + i * 0.03, 2), ppfd: 420, co2: 500, source: 'demo' },
+          { id: U.uid('read'), growId: g.id, ts: new Date(d + 'T23:00:00').toISOString(), date: d, period: 'notte', temp: U.round(tN, 1), rh: U.round(rhN, 0), vpd: U.vpd(tN, rhN, 2), ph: U.round(6.1 + (i % 3) * 0.05, 2), ec: U.round(1.3 + i * 0.03, 2), ppfd: 0, co2: 550, source: 'demo' }
+        );
       }
       this.state.interventions.push(
         { id: U.uid('int'), growId: g.id, date: U.addDays(U.todayISO(), -2), time: '18:30', type: 'irrigazione', amount: '2', ph: 6.2, ec: 1.4, waterTemp: 20, notes: 'Acqua decantata 24h.' },

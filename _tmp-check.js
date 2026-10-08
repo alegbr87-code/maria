@@ -1,0 +1,28 @@
+const fs = require('fs'), path = require('path'), { JSDOM } = require('jsdom');
+const root = '/Users/alegbr87/Desktop/Maria';
+const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const dom = new JSDOM(html, { url: 'https://example.com/', pretendToBeVisual: true, runScripts: 'dangerously' });
+const { window } = dom; window.scrollTo = () => {};
+['js/utils.js', 'js/store.js', 'js/charts.js', 'js/advice.js', 'js/alerts.js', 'js/live.js', 'js/app.js']
+  .forEach(f => window.eval(fs.readFileSync(path.join(root, f), 'utf8')));
+window.App.init(); window.Store.seedDemo(); window.App.go('home');
+let app = window.document.querySelector('#app');
+console.log('ORDINE SEZIONI:');
+[...app.querySelectorAll('.section-title')].forEach(t => console.log('  -', t.textContent.replace(/\s+/g, ' ').trim()));
+console.log('\nADV ITEMS:', app.querySelectorAll('.adv-item').length);
+const first = app.querySelector('.adv-item');
+console.log('primo:', first ? first.querySelector('.adv-tt').textContent + ' :: ' + first.querySelector('.adv-ds').textContent.slice(0, 80) : 'NONE');
+console.log('KPI giorno:', [...app.querySelectorAll('.kpi .k-label')].map(x => x.textContent).join(' | '));
+window.App.paramsPeriod = 'notte'; window.App.render();
+app = window.document.querySelector('#app');
+console.log('KPI notte:', [...app.querySelectorAll('.kpi .k-label')].map(x => x.textContent).join(' | '));
+console.log('ultima lettura notte:', JSON.stringify(window.Store.latestReading(window.App.grow().id, 'notte')).slice(0, 200));
+console.log('orari luce home:', [...app.querySelectorAll('[data-field^="schedule."]')].map(x => x.dataset.field + '=' + x.value).join(', '));
+window.App.report();
+const rep = window.document.querySelector('#report-overlay');
+console.log('\nREPORT — rday blocchi:', rep.querySelectorAll('.rday').length, '| rday-read:', rep.querySelectorAll('.rday-read').length);
+console.log('REPORT contiene orari:', /Orari accensione/.test(rep.textContent));
+const m = rep.textContent.match(/Orari accensione\/spegnimento[^\n]{0,60}/);
+console.log('riga orari:', m ? m[0].trim() : 'assente');
+const m2 = rep.textContent.match(/Timer vegetativa[^\n]{0,60}/);
+console.log('riga timer:', m2 ? m2[0].trim() : 'assente');

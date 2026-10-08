@@ -1,5 +1,5 @@
 /* Maria — Service Worker (offline-first, app-shell caching) */
-const CACHE = 'growfast-v4';
+const CACHE = 'growfast-v5';
 const ASSETS = [
   './',
   './index.html',

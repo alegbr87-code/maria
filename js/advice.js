@@ -133,6 +133,92 @@
 
     healthLabel(n) {
       return ['', 'Critica', 'Scarsa', 'Media', 'Buona', 'Ottima'][n] || '—';
+    },
+
+    // Consiglio del giorno ampio e contestuale: [{icon,title,text}]
+    dailyAdvice(grow, ctx) {
+      ctx = ctx || {};
+      const out = [];
+      const stage = grow.stage;
+      const t = this.targetFor(stage);
+      const week = ctx.week || this.weekOf(grow, U.todayISO());
+      const media = (grow.medium || '').toLowerCase();
+      const isHydro = /(hidro|dwc|coco|rwc|nft|aqua)/.test(media);
+      const sched = grow.schedule || {};
+      const isFlow = ['fioritura', 'flushing'].includes(stage);
+      const curOn = isFlow ? sched.flowerOn : sched.vegOn;
+      const curOff = isFlow ? sched.flowerOff : sched.vegOff;
+      const curH = isFlow ? (sched.flowerHours || 12) : (sched.vegHours || 18);
+
+      const byStage = {
+        germinazione: [
+          ['🌰', 'Calore & umidità', 'Tieni 22–26 °C e UR 70–85%. Substrato umido ma non bagnato: un seme troppo inzuppato marcisce.'],
+          ['⏳', 'Tempi di germinazione', 'In genere 2–7 giorni. Se dopo 7 non esce nulla, controlla la temperatura e prova un ammollo di 12–24h.'],
+          ['💡', 'Luce', 'Buio totale finché il germoglio non emerge; poi luce dolce a 18/6.']
+        ],
+        piantina: [
+          ['💡', 'Luce dolce', 'PPFD ~150–300 µmol e lampada a distanza generosa: le piantine sono delicate. Fotoperiodo 18/6.'],
+          ['💧', 'Irriga in cerchio', `Annaffia a cerchio attorno allo stelo, non sopra, per stimolare le radici${isHydro ? ' (in idro tieni la soluzione ossigenata)' : ''}.`],
+          ['🧪', 'Pochi nutrienti', 'EC 0,4–1,0. Aspetta il 2°–3° palco di foglie vere prima di spingere coi fertilizzanti.']
+        ],
+        vegetativa: [
+          ['🪢', week >= 3 ? 'È il momento di piegare (LST)' : 'Preparati al LST', 'Dal 3°–4° internodo inizia il Low Stress Training: piega la punta per mandare luce ai rami bassi e riempire la chioma.'],
+          ['✂️', 'Topping / FIM', week >= 5 ? 'Dalla 5ª settimana circa, tagliando sopra il 5°–6° nodo ottieni 2 cime principali.' : 'Al 5°–6° nodo potrai fare topping per moltiplicare le cime.'],
+          ['🕸️', 'SCROG per aree piccole', `Con ${grow.plants || 1} piante su poco spazio, una rete SCROG distribuisce i rami e sfrutta tutta la luce.`],
+          ['🌿', 'Leggere le foglie', 'Verde chiaro/giallastro = fame di azoto; verde molto scuro e foglie gocciolanti = troppo azoto.'],
+          ['🔆', 'Fotoperiodo stabile', 'Tieni 18/6 costante: irregolarità nella luce rallentano la crescita.']
+        ],
+        fioritura: [
+          ['📈', 'Stretch (sett. 1–3)', 'In fioritura la pianta può raddoppiare: regola la distanza della lampada e piega la punta se si avvicina troppo.'],
+          ['🌫️', 'UR bassa', 'Tieni l’umidità sotto il 55% e aria sempre in movimento: difesa n.1 contro la muffa (botrite).'],
+          ['🧪', 'Più P-K, meno N', 'Riduci l’azoto e spingi fosforo/potassio; nelle sett. 4–6 un booster PK aiuta le cime.'],
+          ['🍃', 'Defogliazione mirata', 'Sett. 3–4: togli solo le foglie che coprono i siti di fioritura, per far arrivare luce e aria.'],
+          ['🔬', 'Controlla i tricomi', week >= 8 ? 'Col microscopio: lattei = più cerebrale, ambrati 20–30% = più rilassante.' : 'Dalla fine fioritura osserva i tricomi per capire il momento di raccolta.'],
+          ['🚿', 'Prepara il flush', week >= 8 ? 'Interrompi i nutrienti e fai 7–14 giorni di sola acqua a pH corretto.' : '7–14 giorni prima della raccolta farai il flush (sola acqua).']
+        ],
+        flushing: [
+          ['🚿', 'Solo acqua', 'Nessun nutriente per 7–14 giorni, a pH corretto. Ultime 24–48h di buio (opzionale) per spingere la resina.'],
+          ['👃', 'Senti l’aroma', 'Durante il flush l’odore diventa pungente e complesso: sei vicino alla raccolta.']
+        ],
+        raccolta: [['✂️', 'Taglio & secca', 'Taglia al buio e appendi i rami a 18–21 °C, UR 45–55%, con ricambio d’aria.']],
+        essiccazione: [['🌬️', 'Dry 7–14 gg', '18–21 °C, 45–55% UR, buio. Pronto quando uno stelo si spezza “a scricchiolio”.']],
+        concia: [['🫙', 'Curing', 'Barattoli ermetici a 62% UR, “burp” 2 volte al giorno la prima settimana: migliora aroma e sapore.']]
+      };
+
+      (byStage[stage] || byStage.vegetativa).forEach(([icon, title, text]) => out.push({ icon, title, text }));
+
+      // timer / orari
+      if (['piantina', 'vegetativa', 'fioritura', 'flushing'].includes(stage)) {
+        out.push({ icon: '⏱️', title: 'Timer luce', text: `Fase ${stage}: ${curH}h di luce al giorno${curOn ? ' — ON alle ' + curOn : ''}${curOff ? ', OFF alle ' + curOff : ''}. ${isFlow ? 'In fioritura il buio deve essere assoluto: le interruzioni causano ermafroditismo.' : 'Mantieni il fotoperiodo costante.'}` });
+      }
+
+      // media (terra / idro)
+      if (isHydro) {
+        out.push({ icon: '💧', title: 'Idroponica / cocco', text: `pH ${t.phHydro[0]}–${t.phHydro[1]}, EC ${t.ec[0]}–${t.ec[1]}. Nutri più spesso, ossigena la soluzione, attento a calcio/magnesio nel cocco.` });
+      } else {
+        out.push({ icon: '🪴', title: 'Irrigazione in terra', text: `pH ${t.phSoil[0]}–${t.phSoil[1]}, EC ${t.ec[0]}–${t.ec[1]}. Annaffia quando i primi 2–3 cm sono asciutti (o dal peso del vaso): meglio bagnare a fondo e diradare.` });
+      }
+
+      // parametri fuori range
+      if (ctx.reading) {
+        const rng = (ctx.reading.period === 'notte') ? t.tempN : t.tempD;
+        if (ctx.reading.temp != null && (ctx.reading.temp < rng[0] || ctx.reading.temp > rng[1])) {
+          out.push({ icon: '🌡️', title: 'Temperatura fuori target', text: `Ultima lettura (${ctx.reading.period === 'notte' ? 'notte' : 'giorno'}): ${U.fmt(ctx.reading.temp, 1)}°C — range ${rng[0]}–${rng[1]}°C. Regola ventilazione/riscaldamento.` });
+        }
+        if (ctx.reading.rh != null && (ctx.reading.rh < t.rh[0] || ctx.reading.rh > t.rh[1])) {
+          out.push({ icon: '💦', title: 'Umidità da correggere', text: `Ultima lettura: ${U.fmt(ctx.reading.rh, 0)}% (range ${t.rh[0]}–${t.rh[1]}%). ${ctx.reading.rh > t.rh[1] ? 'Aumenta il ricambio d’aria.' : 'Nebulizza o riduci l’estrazione.'}` });
+        }
+      }
+
+      // reminder operativi
+      if (ctx.daysSinceWater != null && ctx.daysSinceWater >= 3 && ['piantina', 'vegetativa', 'fioritura', 'flushing'].includes(stage)) {
+        out.push({ icon: '💧', title: 'Controlla l’acqua', text: `Sono passati ${ctx.daysSinceWater} giorni dall’ultima irrigazione: verifica l’umidità del substrato.` });
+      }
+      if (ctx.daysSinceFeed != null && ctx.daysSinceFeed >= 7 && ['piantina', 'vegetativa', 'fioritura'].includes(stage)) {
+        out.push({ icon: '🧪', title: 'Nutrizione in arrivo', text: `Ultima concimazione ${ctx.daysSinceFeed} giorni fa: in ${stage} conviene alimentare ogni 5–7 giorni.` });
+      }
+
+      return out;
     }
   };
 
